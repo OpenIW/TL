@@ -121,7 +121,7 @@ void tlPrintf(const char* Format, ...)
     tlVPrintf(Format, ap);
 }
 
-char _tltlAssert(const char *file, int line, const char *expr, const char *desc)
+char _tlAssert(const char *file, int line, const char *expr, const char *desc)
 {
     char Buf[256];
 
