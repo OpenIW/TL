@@ -121,11 +121,11 @@ void tlPrintf(const char* Format, ...)
     tlVPrintf(Format, ap);
 }
 
-char _tlAssert(const char *file, int line, const char *expr, const char *desc)
+char _tltlAssert(const char *file, int line, const char *expr, const char *desc)
 {
     char Buf[256];
 
-    _snprintf(Buf, 256, "ASSERT in %s(%d):\n\"%s\" - %s", file, line, expr, desc);
+    _snprintf(Buf, 256, "tlAssert in %s(%d):\n\"%s\" - %s", file, line, expr, desc);
     Buf[255] = 0;
 
     return tlFatalHandler(Buf);
@@ -229,7 +229,7 @@ void* tlScratchPadInit()
 
 void tlScratchPadReset()
 {
-    assert(tlScratchPadRefCount >= 1);
+    tlAssert(tlScratchPadRefCount >= 1);
 
     if ( !--tlScratchPadRefCount )
     {

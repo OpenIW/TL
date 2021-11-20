@@ -223,7 +223,7 @@ jqBoolean jqPoll(jqBatchGroup* GroupID)
     {
         BatchCount = jqPool.GroupID.BatchCount;
     }
-    assert(((unsigned int)BatchCount & 0x7) == 0);
+    tlAssert(((unsigned int)BatchCount & 0x7) == 0);
     return BatchCount != 0;
 }
 
@@ -246,7 +246,7 @@ void jqSetWorkerInitFunction(void(*fn)(int))
 
 void jqLetWorkersSleep()
 {
-    assert(jqKeepWorkersAwakeCount > 0);
+    tlAssert(jqKeepWorkersAwakeCount > 0);
     _InterlockedExchangeAdd(&jqKeepWorkersAwakeCount, 0xFFFFFFFF);
 }
 
@@ -468,7 +468,7 @@ void _jqStart()
         if ( !jqWorkers[i].Processor )
         {
             thr = CreateThread(0, 0x10000, (LPTHREAD_START_ROUTINE)jqWorkerThread, &jqWorkers[i], 4, &ThreadId);
-            assert(thr != 0);
+            tlAssert(thr != 0);
             jqWorkers[i].Thread = thr;
             ResumeThread(thr);
         }
@@ -526,7 +526,7 @@ void jqKeepWorkersAwake()
 
 void jqUnlockBatchPool()
 {
-    assert(jqBatchPoolExternallyLockedCount > 0);
+    tlAssert(jqBatchPoolExternallyLockedCount > 0);
     InterlockedExchangeAdd(&jqBatchPoolExternallyLockedCount, 0xFFFFFFFF);
     if (!jqBatchPoolExternallyLockedCount)
         PulseEvent(jqNewJobAdded);
@@ -537,8 +537,8 @@ void jqSetBatchDataHeapSize(unsigned int Size, unsigned int BlockSize)
 {
     void* alloc;
 
-    assert(!jqNWorkers);
-    assert(Size > 0);
+    tlAssert(!jqNWorkers);
+    tlAssert(Size > 0);
 
     if (jqPool.BatchDataHeap.LevelData)
     {
@@ -605,7 +605,7 @@ void jqInitWorker(jqWorker* Worker)
 
 void jqAddBatchToQueue(const jqBatch* Batch, jqQueue* Queue)
 {
-    assert(Batch->Module != NULL);
+    tlAssert(Batch->Module != NULL);
     if (Batch->GroupID)
     {
         _InterlockedExchangeAdd(&Batch->GroupID->QueuedBatchCount, 1u);
@@ -623,7 +623,7 @@ void jqAddBatch(const jqBatch* Batch, jqQueue* Queue)
     {
         Queue = &jqGlobalQueue;
     }
-    assert(Batch->Module != NULL);
+    tlAssert(Batch->Module != NULL);
     if (Batch->GroupID)
     {
 
@@ -648,7 +648,7 @@ void jqAddBatch(const jqModule* Module, void* Input, void* Output, jqBatchGroup*
     Batch.Output = Output;
     Batch.GroupID = GroupID;
 
-    assert(ParamSize >= 0 && ParamSize <= (int)sizeof(Batch.ParamData));
+    tlAssert(ParamSize >= 0 && ParamSize <= (int)sizeof(Batch.ParamData));
 
     if (ParamData && ParamSize)
     {
@@ -716,7 +716,7 @@ void jqFlush(jqBatchGroup* GroupID, unsigned __int64 batchCount)
         ExecutingBatchCount = &jqPool.GroupID.ExecutingBatchCount;
     }
 
-    assert(((u32)BatchCount & 7)==0);
+    tlAssert(((u32)BatchCount & 7)==0);
     workerBatchCount = (batchCount) ? &zero : &BatchCount;
     while (1)
     {
@@ -732,11 +732,11 @@ void jqFlush(jqBatchGroup* GroupID, unsigned __int64 batchCount)
 
 void jqStop()
 {
-    assert(jqGetCurrentThreadID() == jqGetMainThreadID());
+    tlAssert(jqGetCurrentThreadID() == jqGetMainThreadID());
     if (jqWorkers)
     {
         jqFlush(0, 0);
-        assert(jqPool.GroupID.QueuedBatchCount == 0);
+        tlAssert(jqPool.GroupID.QueuedBatchCount == 0);
         _jqStop();
         tlMemFree(jqTempWorkers);
         jqNWorkers = 0;
@@ -751,8 +751,8 @@ void jqAssistWithBatches(bool(__cdecl* callback)(void*), void* context, jqBatchG
 
     if (jqTempWorkers)
     {
-        assert(callback);
-        assert(jqNextAvailTempWorker < JQ_MAX_TEMP_WORKERS);
+        tlAssert(callback);
+        tlAssert(jqNextAvailTempWorker < JQ_MAX_TEMP_WORKERS);
         tmpWorker = &jqTempWorkers[InterlockedExchangeAdd(&jqNextAvailTempWorker, 1u)];
         tmpWorker->Processor = -1;
         tmpWorker->NumQueues = 1;
@@ -766,7 +766,7 @@ void jqShutdown()
 {
     void* mem;
 
-    assert(jqGetCurrentThreadID() == jqGetMainThreadID());
+    tlAssert(jqGetCurrentThreadID() == jqGetMainThreadID());
     jqStop();
     while (jqPool.BaseQueue.Queue.NodeBlockListHead)
     {
@@ -782,7 +782,7 @@ void jqStart()
 {
     int i, processorsMask;
 
-    assert(jqGetCurrentThreadID() == jqGetMainThreadID());
+    tlAssert(jqGetCurrentThreadID() == jqGetMainThreadID());
     jqStop();
 
     processorsMask = jqProcessorsMask | 1;

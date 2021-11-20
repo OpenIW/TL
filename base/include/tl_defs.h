@@ -11,7 +11,7 @@
 #endif
 
 #define UNIMPLEMENTED(x) { static bool inited = false; if (!inited) { OutputDebugStringA("----- "); OutputDebugStringA(x); OutputDebugStringA(" not implemented.\n"); inited = true; }};
-#define assert(cond) if (!(cond) && !_tlAssert(__FILE__, __LINE__, "%s", #cond)) { __debugbreak(); }
+#define tlAssert(cond) if (!(cond) && !_tlAssert(__FILE__, __LINE__, "%s", #cond)) { __debugbreak(); }
 
 typedef unsigned int u32;
 
