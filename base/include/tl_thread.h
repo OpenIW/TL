@@ -147,12 +147,10 @@ public:
 
 class tlAtomicMutex
 {
-private:
+public:
     unsigned __int64 ThreadId;
     int LockCount;
     tlAtomicMutex* ThisPtr;
-
-public:
 
     ~tlAtomicMutex()
     {
@@ -222,6 +220,36 @@ public:
             }
         }
         return 0;
+    }
+};
+
+class tlSharedAtomicMutex
+{
+public:
+    volatile unsigned __int64 ThreadId;
+    volatile int LockCount;
+    tlSharedAtomicMutex* ThisPtr;
+
+    void Lock()
+    {
+        unsigned __int64 CurThread;
+        LONG Target;
+
+        CurThread = GetCurrentThreadId();
+        if (ThreadId == CurThread)
+        {
+            ++LockCount;
+        }
+        else
+        {
+            while (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0))
+            {
+                SwitchToThread();
+            }
+            Target = 0;
+            InterlockedExchange(&Target, 0);
+            ThisPtr->LockCount = 1;
+        }
     }
 };
 

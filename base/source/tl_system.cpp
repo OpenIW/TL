@@ -131,8 +131,6 @@ char _tlAssert(const char *file, int line, const char *expr, const char *desc)
     return tlFatalHandler(Buf);
 }
 
-#define assert(cond) if (!(cond) && !_tlAssert(__FILE__, __LINE__, "%s", #cond)) { __debugbreak(); }
-
 void tlFatal(const char* Format, ...)
 {
     char Work[512];
