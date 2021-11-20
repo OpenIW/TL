@@ -25,6 +25,8 @@ endfunction()
 
 include_directories(
     base/include
+    jobqueue
+    physics/include
 )
 
 file(GLOB_RECURSE SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.cpp *.h *.inl)
