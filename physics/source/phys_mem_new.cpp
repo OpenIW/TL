@@ -6,6 +6,21 @@ phys_memory_manager* g_phys_memory_manager;
 
 #define allocation_owner 0xFEDCBA98
 
+int phys_slot_pool::get_count()
+{
+	return m_map_key;
+}
+
+unsigned __int16 phys_slot_pool::get_slot_size(int count)
+{
+	return (unsigned __int16)count;
+}
+
+phys_slot_pool::extra_info* phys_slot_pool::get_ei(void* slot, int count)
+{
+	return (phys_slot_pool::extra_info*)((int)slot + get_slot_size(count) - 8);
+}
+
 void* phys_slot_pool::allocate_slot()
 {
 	return nullptr;
@@ -21,9 +36,10 @@ unsigned int phys_slot_pool::encode_size_alignment(unsigned int size, unsigned i
 
 void phys_slot_pool::extra_info_allocate(void* slot)
 {
-	extra_info* ei = (extra_info*)((char*)slot + m_map_key - 8);
+	extra_info* ei;
 
 	tlMemoryFence();
+	ei = get_ei(slot, get_count());
 	tlAssert(slot);
 	tlAssert(ei->m_slot_pool_owner == this);
 
@@ -38,9 +54,10 @@ void phys_slot_pool::extra_info_allocate(void* slot)
 
 void phys_slot_pool::extra_info_free(void* slot)
 {
-	extra_info* ei = (extra_info*)((char*)slot + m_map_key - 8);
+	extra_info* ei;
 
 	tlMemoryFence();
+	ei = get_ei(slot, get_count());
 	tlAssert(slot);
 	memset(slot, 0xFF, m_map_key - 8);
 	tlAssert(ei->m_slot_pool_owner == this);
@@ -78,7 +95,7 @@ void phys_slot_pool::validate_slot(void* slot)
 	extra_info* ei;
 
 	tlMemoryFence();
-	ei = (extra_info*)((char*)slot + m_map_key - 8);
+	ei = get_ei(slot, get_count());
 	tlAssert(ei->m_slot_pool_owner == this);
 	tlAssert(GetStuff32(&ei->m_allocation_owner) == allocation_owner);
 }

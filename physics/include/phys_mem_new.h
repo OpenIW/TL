@@ -24,6 +24,9 @@ public:
 		void* m_allocation_owner;
 	};
 
+	int get_count();
+	static unsigned __int16 get_slot_size(int count);
+	extra_info* get_ei(void* slot, int count);
 	void* allocate_slot();
 	static unsigned int encode_size_alignment(unsigned int size, unsigned int alignment);
 	void extra_info_allocate(void* slot);
