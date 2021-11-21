@@ -38,6 +38,12 @@ typedef struct CPPEH_RECORD
 
 const DWORD MS_VC_EXCEPTION = 0x406D1388;
 
+FORCEINLINE void tlMemoryFence()
+{
+    LONG Fence = 0;
+    InterlockedExchange(&Fence, 0);
+}
+
 static void SetThreadName(unsigned int dwThreadID, const char* szThreadName)
 {
     THREADNAME_INFO info;
@@ -70,7 +76,6 @@ private:
 public:
     void WriteLock()
     {
-        LONG Target;
         unsigned __int64 CurThread;
 
         CurThread = GetCurrentThreadId();
@@ -96,13 +101,11 @@ public:
         }
 
         _InterlockedExchangeAdd((volatile LONG*)&ThisPtr->WriteLockCount, 1);
-        Target = 0;
-        InterlockedExchange(&Target, 0);
+        tlMemoryFence();
     }
 
     void ReadLock()
     {
-        LONG Target;
         unsigned __int64 CurThread;
 
         CurThread = GetCurrentThreadId();
@@ -125,20 +128,17 @@ public:
 
             while (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, 0, CurThread) != CurThread) {}
         }
-        Target = 0;
-        InterlockedExchange(&Target, 0);
+        tlMemoryFence();
     }
 
     void WriteUnlock()
     {
-        LONG Target;
         unsigned __int64 CurThread;
 
         CurThread = GetCurrentThreadId();
         if (!/*Sys_*/InterlockedDecrement((volatile LONG*)&ThisPtr->WriteLockCount))
         {
-            Target = 0;
-            InterlockedExchange(&Target, 0);
+            tlMemoryFence();
             while (_InterlockedCompareExchange64((volatile signed __int64*)ThisPtr, 0, CurThread) != CurThread) {}
         }
     }
@@ -160,7 +160,6 @@ public:
 
     void Lock()
     {
-        LONG Target;
         unsigned __int64 CurThread;
 
         CurThread = GetCurrentThreadId();
@@ -179,27 +178,22 @@ public:
                 SwitchToThread();
             }
 
-            Target = 0;
-            InterlockedExchange(&Target, 0);
+            tlMemoryFence();
             LockCount = 1;
         }
     }
 
     void Unlock()
     {
-        LONG Target;
-
         if (LockCount-- == 1)
         {
-            Target = 0;
-            InterlockedExchange(&Target, 0);
+            tlMemoryFence();
             ThreadId = 0;
         }
     }
 
     bool TryLock()
     {
-        LONG Target;
         unsigned __int64 CurThread;
 
         CurThread = GetCurrentThreadId();
@@ -212,8 +206,7 @@ public:
         {
             if (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
             {
-                Target = 0;
-                InterlockedExchange(&Target, 0);
+                tlMemoryFence();
                 LockCount = 1;
 
                 return 1;
@@ -233,7 +226,6 @@ public:
     void Lock()
     {
         unsigned __int64 CurThread;
-        LONG Target;
 
         CurThread = GetCurrentThreadId();
         if (ThreadId == CurThread)
@@ -246,8 +238,7 @@ public:
             {
                 SwitchToThread();
             }
-            Target = 0;
-            InterlockedExchange(&Target, 0);
+            tlMemoryFence();
             ThisPtr->LockCount = 1;
         }
     }

@@ -23,3 +23,11 @@ void* tlScratchPadInit();
 void tlScratchPadReset();
 void tlWarning(const char* Format, ...);
 bool tlReadFile(const char* FileName, tlFileBuf* File, unsigned int Align, unsigned int Flags);
+
+int tl_align(int dest, int align);
+int tlCeilDiv(int Dividend, int Divisor);
+int tlCountOnes(int in);
+inline int GetStuff32(void* pos)
+{
+	return (int)pos;
+}

@@ -1,6 +1,7 @@
 #include "jobqueue.h"
 
 #define JQ_MAX_TEMP_WORKERS 16
+#define JQ_ATOMIC_HEAP_MAX_LEVELS 11
 
 jqBatchGroup::jqBatchGroup()
 {
@@ -26,35 +27,112 @@ bool jqAtomicHeap::GetAvailableBlock(LevelInfo* FitLevel, int* FitSlot)
 
 bool jqAtomicHeap::AllocBlock(LevelInfo** FitLevel, int* FitSlot)
 {
-    return false;
+    if (*FitLevel >= &Levels[NLevels])
+    {
+        return false;
+    }
+    
+    while (!GetAvailableBlock(*FitLevel, FitSlot))
+    {
+        if (++ * FitLevel >= &Levels[NLevels])
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 int jqAtomicHeap::SplitBlock(LevelInfo* Level, int Slot, LevelInfo* LevelTo)
 {
-    return 0;
+    jqAtomicHeap::LevelInfo* i;
+
+    for (i = Level; i > LevelTo; tlAtomicOr(&i->CellAvailable[(Slot + 1) / 64], 1i64 << ((Slot + 1) & 0x3F)))
+    {
+        Slot *= 2;
+        --i;
+    }
+    tlAtomicOr(&i->CellAllocated[Slot / 64], 1i64 << (Slot & 0x3F));
+    return Slot;
 }
 
 char* jqAtomicHeap::AllocLevel(int LevelIdx)
 {
-    return nullptr;
+    jqAtomicHeap::LevelInfo* LevelTo;
+    jqAtomicHeap::LevelInfo* FitLevel;
+    int blockPos;
+    
+    LevelTo = &Levels[LevelIdx];
+    FitLevel = LevelTo;
+    LevelIdx = 0;
+    if (!AllocBlock(&FitLevel, &LevelIdx))
+    {
+        return 0;
+    }
+    blockPos = SplitBlock(FitLevel, LevelIdx, LevelTo);
+    tlAtomicAdd(&ThisPtr->TotalBlocks, 1);
+    tlAtomicAdd(&ThisPtr->TotalUsed, LevelTo->BlockSize);
+    return &HeapBase[blockPos * LevelTo->BlockSize];
 }
 
-int jqAtomicHeap::FindLevelForSize(unsigned int size)
+int jqAtomicHeap::FindLevelForSize(unsigned int Size)
 {
-    return 0;
+    return (BlockSize < Size)
+        + (2 * BlockSize < Size)
+        + (4 * BlockSize < Size)
+        + (8 * BlockSize < Size)
+        + (16 * BlockSize < Size)
+        + (32 * BlockSize < Size)
+        + (BlockSize << 6 < Size)
+        + (BlockSize << 7 < Size)
+        + (BlockSize << 8 < Size)
+        + (BlockSize << 9 < Size)
+        + (BlockSize << 10 < Size);
 }
 
 char* jqAtomicHeap::Alloc(unsigned int Size, unsigned int Align)
 {
-    return nullptr;
+    int LevelForSize;
+    char* alloc;
+
+    Mutex.Lock();
+    Size = (Size < Align) ? Align : Size;
+    if (Size <= HeapSize)
+    {
+        LevelForSize = FindLevelForSize(Size);
+        alloc = AllocLevel(LevelForSize);
+        Mutex.Unlock();
+        return alloc;
+    }
+    else
+    {
+        tlPrintf("Size (%d) > HeapSize (%d), return NULL\n", Size, HeapSize);
+        return 0;
+    }
 }
 
 void jqAtomicHeap::FindAllocatedBlock(unsigned int Offset, LevelInfo** FitLevel, int* FitSlot)
 {
+    jqAtomicHeap::LevelInfo* i;
+
+    *FitLevel = Levels;
+
+    if (*FitLevel < &Levels[NLevels])
+    {
+        for (i = *FitLevel; i < &Levels[NLevels]; ++i)
+        {
+            *FitSlot = Offset / (*FitLevel)->BlockSize;
+            if (((*FitLevel)->CellAllocated[*FitSlot / 64] & (1i64 << (*FitSlot & 0x3F))) != 0)
+            {
+                break;
+            }
+        }
+    }
+    tlAssert(*FitLevel < &Levels[NLevels]);
 }
 
 void jqAtomicHeap::MergeBlocks(LevelInfo** FitLevel, int* FitSlot)
 {
+    UNIMPLEMENTED(__FUNCTION__);
 }
 
 void jqAtomicHeap::Free(void* Ptr)
@@ -64,12 +142,14 @@ void jqAtomicHeap::Free(void* Ptr)
 
     Mutex.Lock();
     FindAllocatedBlock((char*)Ptr - HeapBase, &FitLevel, &FitSlot);
-    tlAtomicAnd(&FitLevel->CellAllocated[FitSlot / 64], ~(1i64 << (FitSlot & 0x3F)));
+    tlAtomicAnd(&FitLevel->CellAllocated[BlockCell(FitSlot)], BlockBit(FitSlot));
     tlAtomicAdd(&ThisPtr->TotalBlocks, 0xFFFFFFFF);
     tlAtomicAdd(&ThisPtr->TotalUsed, -FitLevel->BlockSize);
     MergeBlocks(&FitLevel, &FitSlot);
-
-    // todo
+    
+    tlAssert((jqGet(&FitLevel->CellAvailable[BlockCell(FitSlot)]) & BlockBit(FitSlot)) == 0);
+    tlAtomicOr(&FitLevel->CellAvailable[BlockCell(FitSlot)], BlockBit(FitSlot));
+    Mutex.Unlock();
 }
 
 jqAtomicHeap::~jqAtomicHeap()
@@ -84,6 +164,43 @@ jqAtomicHeap::~jqAtomicHeap()
 
 void jqAtomicHeap::Init(void* _HeapBase, unsigned int _HeapSize, unsigned int _BlockSize)
 {
+    int i, j, k;
+    unsigned char* v6;
+    unsigned __int64* nextCell;
+    int align;
+
+    HeapBase = reinterpret_cast<char*>(_HeapBase);
+    HeapSize = _HeapSize;
+    BlockSize = _BlockSize;
+    ThisPtr = this;
+    TotalUsed = 0;
+    TotalBlocks = 0;
+    for (NLevels = 1; BlockSize < HeapSize; BlockSize *= 2)
+    {
+        ++NLevels;
+    }
+    tlAssert((BlockSize << (NLevels - 1)) == HeapSize);
+    tlAssert(NLevels <= JQ_ATOMIC_HEAP_MAX_LEVELS);
+    i = 0;
+    for (j = 0; j < NLevels; ++j)
+    {
+        Levels[j].BlockSize = BlockSize << j;
+        Levels[j].NBlocks = 1 << (NLevels - 1 - j);
+        Levels[j].NCells = tlCeilDiv(Levels[j].NBlocks, 64);
+        i += tl_align(Levels[j].NBlocks, 1024) / 8;
+    }
+    LevelData = (unsigned char*)tlMemAlloc(2 * i, 128, 0);
+    memset(LevelData, 0, 2 * i);
+    v6 = LevelData;
+    nextCell = (unsigned __int64*)&LevelData[i];
+    for (k = 0; k < NLevels; ++k)
+    {
+        align = tl_align(Levels[k].NBlocks, 1024) / 8;
+        Levels[k].CellAvailable = (unsigned __int64*)LevelData;
+        Levels[k].CellAllocated = nextCell;
+        nextCell += align;
+        LevelData += align;
+    }
 }
 
 jqQueue::~jqQueue()
@@ -103,10 +220,6 @@ jqBatchPool::~jqBatchPool()
     BaseQueue.Queue.HeadLock.ThisPtr = 0;
 }
 
-void jqAttachQueueToWorkers(jqQueue* Queue, unsigned int ProcessorMask)
-{
-}
-
 unsigned int jqProcessorsMask = 255;
 int jqNWorkers;
 unsigned __int64 jqMainThreadID;
@@ -115,6 +228,7 @@ jqWorker* jqWorkers;
 jqWorker* jqTempWorkers;
 jqBatchPool jqPool;
 jqQueue jqGlobalQueue;
+jqQueue jqHighPriorityQueue;
 void(__cdecl* jqWorkerInitFn)(int);
 LONG jqKeepWorkersAwakeCount;
 LONG jqSleepingWorkersCount;
@@ -128,6 +242,11 @@ LONG jqNextAvailTempWorker;
 __declspec(thread) jqQueue* jqCurQueue;
 __declspec(thread) jqWorker* jqCurWorker;
 __declspec(thread) jqBatch* jqCurBatch;
+
+void jqAttachQueueToWorkers(jqQueue* Queue, unsigned int ProcessorMask)
+{
+    UNIMPLEMENTED(__FUNCTION__);
+}
 
 void jqEnableWorkers(unsigned int ProcessorsMask)
 {
@@ -665,20 +784,24 @@ void jqSkipBatch()
 
 bool jqPopNextBatchFromQueue(jqWorker* Worker, jqQueue* Queue, jqBatchGroup* GroupID)
 {
+    UNIMPLEMENTED(__FUNCTION__);
     return false;
 }
 
 bool jqPopNextBatch(jqWorker* Worker, bool* doHighPriority, jqBatchGroup* GroupID, jqBatch* PoppedBatch)
 {
+    UNIMPLEMENTED(__FUNCTION__);
     return false;
 }
 
 void jqWorkerLoop(jqWorker* Worker, jqBatchGroup* GroupID, bool BreakWhenEmpty, unsigned __int64* batchCount)
 {
+    UNIMPLEMENTED(__FUNCTION__);
 }
 
 void jqTempWorkerLoop(jqWorker* Worker, jqBatchGroup* GroupID, bool(__cdecl* callback)(void*), void* context)
 {
+    UNIMPLEMENTED(__FUNCTION__);
 }
 
 unsigned int jqWorkerThread(void* _this)
@@ -780,19 +903,38 @@ void jqShutdown()
 
 void jqStart()
 {
-    int i, processorsMask;
+    int id, j, processor;
 
     tlAssert(jqGetCurrentThreadID() == jqGetMainThreadID());
+    // Stop any running jobqueue
     jqStop();
 
-    processorsMask = jqProcessorsMask | 1;
+    // Init needed workers
     jqProcessorsMask |= 1;
-    for (i = 0, processorsMask = jqProcessorsMask | 1; processorsMask; ++i)
+    jqNWorkers = tlCountOnes(jqProcessorsMask);
+    jqWorkers = (jqWorker*)tlMemAlloc(jqNWorkers << 7, 8, 0);
+    memset(jqWorkers, 0, jqNWorkers << 7);
+    for (processor = jqProcessorsMask, j = 1, id = 0; (processor & j) == 0; j *= 2)
     {
-        processorsMask &= processorsMask - 1;
+        jqInitWorker(&jqWorkers[id]);
+        jqWorkers[id].Processor = processor;
+        jqWorkers[id].WorkerID = id;
+        ++id;
     }
-    jqNWorkers = i;
-    jqWorkers = (jqWorker*)tlMemAlloc(sizeof(jqWorker) * i, 8, 0);
-    memset(jqWorkers, 0, sizeof(jqWorker) * jqNWorkers);
-    // todo
+    tlAssert(id == jqNWorkers);
+
+    // Init temp workers
+    jqTempWorkers = (jqWorker*)tlMemAlloc(sizeof(jqWorker) * JQ_MAX_TEMP_WORKERS, 8, 0);
+    memset(jqTempWorkers, 0, sizeof(jqWorker) * JQ_MAX_TEMP_WORKERS);
+    for (id = 0; id < JQ_MAX_TEMP_WORKERS; ++id)
+    {
+        jqInitWorker(&jqTempWorkers[id]);
+    }
+
+    // Init global queue and high priority queue
+    jqInitQueue(&jqGlobalQueue);
+    jqAttachQueueToWorkers(&jqGlobalQueue, 255);
+    jqInitQueue(&jqHighPriorityQueue);
+    jqAttachQueueToWorkers(&jqHighPriorityQueue, 255);
+    _jqStart();
 }

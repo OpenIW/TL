@@ -260,3 +260,25 @@ bool tlReadFile(const char *FileName, tlFileBuf *File, unsigned int Align, unsig
     UNIMPLEMENTED(__FUNCTION__);
     return 0;
 }
+
+int tl_align(int dest, int align)
+{
+    return (dest + align - 1) & ~(align - 1);
+}
+
+int tlCeilDiv(int Dividend, int Divisor)
+{
+    return (Dividend + Divisor - 1) / Divisor;
+}
+
+int tlCountOnes(int in)
+{
+    int back_chain = 0;
+
+    while (in)
+    {
+        in &= in - 1;
+        ++back_chain;
+    }
+    return back_chain;
+}

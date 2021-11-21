@@ -128,13 +128,21 @@ public:
 	volatile unsigned int TotalBlocks;
 	int NLevels;
 	LevelInfo Levels[11];
-	char* LevelData;
+	unsigned char* LevelData;
 
+	inline int BlockCell(int FitSlot)
+	{
+		return FitSlot / 64;
+	}
+	inline unsigned __int64 BlockBit(int FitSlot)
+	{
+		return ~(1i64 << (FitSlot & 0x3F));
+	}
 	bool GetAvailableBlock(LevelInfo* FitLevel, int* FitSlot);
 	bool AllocBlock(LevelInfo** FitLevel, int* FitSlot);
 	int SplitBlock(LevelInfo* Level, int Slot, LevelInfo* LevelTo);
 	char* AllocLevel(int LevelIdx);
-	int FindLevelForSize(unsigned int size);
+	int FindLevelForSize(unsigned int Size);
 	char* Alloc(unsigned int Size, unsigned int Align);
 	void FindAllocatedBlock(unsigned int Offset, LevelInfo** FitLevel, int* FitSlot);
 	void MergeBlocks(LevelInfo** FitLevel, int* FitSlot);
@@ -275,17 +283,43 @@ void jqAssistWithBatches(bool(__cdecl* callback)(void*), void* context, jqBatchG
 void jqShutdown();
 void jqStart();
 
-inline int BlockCell(int FitSlot)
+inline unsigned __int64 jqGet(unsigned __int64* Cell)
 {
-	return FitSlot / 64;
+	// TODO
+	unsigned __int64 result;
+
+	*(unsigned __int64*)((char*)&result + 4) = *Cell;
+	return result;
 }
 
-inline int BlockBit(__int64 FitSlot)
+template<typename T, unsigned int I>
+inline void jqAtomicQueue<T, I>::AllocateNodeBlock(int Count)
 {
-
+	UNIMPLEMENTED(__FUNCTION__);
 }
 
-inline __int64 jqGet(unsigned __int64 Cell)
+template<typename T, unsigned int I>
+inline jqAtomicQueue<T, I>::NodeType* jqAtomicQueue<T, I>::AllocateNode()
 {
+	UNIMPLEMENTED(__FUNCTION__);
+	return nullptr;
+}
 
+template<typename T, unsigned int I>
+inline void jqAtomicQueue<T, I>::Init(jqAtomicQueue<T, I>* SharedFreeList)
+{
+	UNIMPLEMENTED(__FUNCTION__);
+}
+
+template<typename T, unsigned int I>
+inline void jqAtomicQueue<T, I>::Push(const jqBatch* Data)
+{
+	UNIMPLEMENTED(__FUNCTION__);
+}
+
+template<typename T, unsigned int I>
+inline bool jqAtomicQueue<T, I>::Pop(jqBatch* p)
+{
+	UNIMPLEMENTED(__FUNCTION__);
+	return false;
 }
