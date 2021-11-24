@@ -281,3 +281,8 @@ static unsigned __int64 tlAtomicOr(volatile unsigned __int64* var, unsigned __in
     }
     return value | v;
 }
+
+static unsigned int tlGetCurrentThreadId()
+{
+    return GetCurrentThreadId();
+}

@@ -36,8 +36,8 @@ public:
 	{
 		struct
 		{
-			LONG QueuedBatchCount;
-			LONG ExecutingBatchCount;
+			int QueuedBatchCount;
+			int ExecutingBatchCount;
 		};
 		unsigned __int64 BatchCount;
 	};
@@ -162,7 +162,7 @@ class jqQueue
 public:
 	jqQueue* ThisPtr;
 	jqAtomicQueue<jqBatch, 32> Queue;
-	LONG QueuedBatchCount;
+	int QueuedBatchCount;
 	unsigned int ProcessorsMask;
 	~jqQueue();
 };

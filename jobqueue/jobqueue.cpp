@@ -686,6 +686,7 @@ void jqInit()
     jqPool.BaseQueue.Queue.Head = Node;
     jqPool.BaseQueue.QueuedBatchCount = 0;
     jqPool.BaseQueue.Queue.AllocateNodeBlock(128);
+    jqMainThreadID = tlGetCurrentThreadId();
     jqSleepingWorkersCount = 0;
     jqMainThreadID = GetCurrentThreadId();
     _jqInit();
@@ -722,11 +723,11 @@ void jqAddBatchToQueue(const jqBatch* Batch, jqQueue* Queue)
     tlAssert(Batch->Module != NULL);
     if (Batch->GroupID)
     {
-        _InterlockedExchangeAdd(&Batch->GroupID->QueuedBatchCount, 1u);
+        tlAtomicIncrement(&Batch->GroupID->QueuedBatchCount);
     }
-    _InterlockedExchangeAdd(&Batch->Module->Group.QueuedBatchCount, 1u);
-    _InterlockedExchangeAdd(&jqPool.GroupID.QueuedBatchCount, 1u);
-    _InterlockedExchangeAdd(&Queue->QueuedBatchCount, 1u);
+    tlAtomicIncrement(&Batch->Module->Group.QueuedBatchCount);
+    tlAtomicIncrement(&jqPool.GroupID.QueuedBatchCount);
+    tlAtomicIncrement(&Queue->QueuedBatchCount);
     Queue->Queue.Push(Batch);
     PulseEvent(jqNewJobAdded);
 }
@@ -741,11 +742,11 @@ void jqAddBatch(const jqBatch* Batch, jqQueue* Queue)
     if (Batch->GroupID)
     {
 
-        _InterlockedExchangeAdd(&Batch->GroupID->QueuedBatchCount, 1u);
+        tlAtomicIncrement(&Batch->GroupID->QueuedBatchCount);
     }
-    _InterlockedExchangeAdd(&Batch->Module->Group.QueuedBatchCount, 1u);
-    _InterlockedExchangeAdd(&jqPool.GroupID.QueuedBatchCount, 1u);
-    _InterlockedExchangeAdd(&Queue->QueuedBatchCount, 1u);
+    tlAtomicIncrement(&Batch->Module->Group.QueuedBatchCount);
+    tlAtomicIncrement(&jqPool.GroupID.QueuedBatchCount);
+    tlAtomicIncrement(&Queue->QueuedBatchCount);
     Queue->Queue.Push(Batch);
     PulseEvent(jqNewJobAdded);
 }
@@ -814,7 +815,7 @@ unsigned int jqWorkerThread(void* _this)
 void jqFlush(jqBatchGroup* GroupID, unsigned __int64 batchCount)
 {
     unsigned __int64 BatchCount;
-    volatile LONG* ExecutingBatchCount;
+    volatile int* ExecutingBatchCount;
     int QueuedBatchCount;
     unsigned __int64* workerBatchCount;
     unsigned __int64 zero = 0;
