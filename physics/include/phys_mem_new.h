@@ -7,6 +7,11 @@ volatile struct tagged_void_pointer_t
 {
 	void* m_ptr;
 	unsigned int m_tag;
+
+	void set(void* value)
+	{
+		m_ptr = value;
+	}
 };
 
 class phys_slot_pool
@@ -24,6 +29,8 @@ public:
 		void* m_allocation_owner;
 	};
 
+	phys_slot_pool* get_hash_next();
+	void set_hash_next(phys_slot_pool* hash);
 	int get_count();
 	static unsigned __int16 get_slot_size(int count);
 	extra_info* get_ei(void* slot, int count);
@@ -56,6 +63,7 @@ public:
 	phys_memory_manager(void* memory_buffer, int memory_buffer_size);
 };
 
+char* PHYS_ALIGN(char* pos, int alignment);
 phys_slot_pool* GET_PHYS_SLOT_POOL(unsigned int size, unsigned int alignment);
 void phys_memory_manager_init(void* memory_buffer, const int memory_buffer_size);
 void phys_memory_manager_term();

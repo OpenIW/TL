@@ -132,7 +132,10 @@ void jqAtomicHeap::FindAllocatedBlock(unsigned int Offset, LevelInfo** FitLevel,
 
 void jqAtomicHeap::MergeBlocks(LevelInfo** FitLevel, int* FitSlot)
 {
-    UNIMPLEMENTED(__FUNCTION__);
+    if ((*FitLevel)->BlockSize < HeapSize + NLevels)
+    {
+
+    }
 }
 
 void jqAtomicHeap::Free(void* Ptr)
@@ -165,7 +168,6 @@ jqAtomicHeap::~jqAtomicHeap()
 void jqAtomicHeap::Init(void* _HeapBase, unsigned int _HeapSize, unsigned int _BlockSize)
 {
     int i, j, k;
-    unsigned char* v6;
     unsigned __int64* nextCell;
     int align;
 
@@ -187,15 +189,14 @@ void jqAtomicHeap::Init(void* _HeapBase, unsigned int _HeapSize, unsigned int _B
         Levels[j].BlockSize = BlockSize << j;
         Levels[j].NBlocks = 1 << (NLevels - 1 - j);
         Levels[j].NCells = tlCeilDiv(Levels[j].NBlocks, 64);
-        i += tl_align(Levels[j].NBlocks, 1024) / 8;
+        i += (int)tl_align<char>((char*)(Levels[j].NBlocks), 1024) / 8;
     }
     LevelData = (unsigned char*)tlMemAlloc(2 * i, 128, 0);
     memset(LevelData, 0, 2 * i);
-    v6 = LevelData;
     nextCell = (unsigned __int64*)&LevelData[i];
     for (k = 0; k < NLevels; ++k)
     {
-        align = tl_align(Levels[k].NBlocks, 1024) / 8;
+        align = (int)tl_align<char>((char*)(Levels[k].NBlocks), 1024) / 8;
         Levels[k].CellAvailable = (unsigned __int64*)LevelData;
         Levels[k].CellAllocated = nextCell;
         nextCell += align;
@@ -396,8 +397,6 @@ bool jqCanBatchExecute()
 
 jqBoolean jqWorkerSleep()
 {
-    LONG Target;
-
     while (!jqPool.GroupID.QueuedBatchCount)
     {
         if (jqStopSignal)
@@ -413,8 +412,7 @@ jqBoolean jqWorkerSleep()
         _InterlockedExchangeAdd(&jqSleepingWorkersCount, 0xFFFFFFFF);
     }
     SwitchToThread();
-    Target = 0;
-    InterlockedExchange(&Target, 0);
+    tlMemoryFence();
     return !jqStopSignal;
 }
 
@@ -627,10 +625,7 @@ void jqAlertWorkers()
 
 void jqUnlockBatchPoolInternal()
 {
-    LONG Target;
-
-    Target = 0;
-    InterlockedExchange(&Target, 0);
+    tlMemoryFence();
     while (InterlockedCompareExchange(&jqPoolLock, 0, 1) != 1);
 }
 
@@ -821,7 +816,6 @@ void jqFlush(jqBatchGroup* GroupID, unsigned __int64 batchCount)
     unsigned __int64 BatchCount;
     volatile LONG* ExecutingBatchCount;
     int QueuedBatchCount;
-    LONG Target;
     unsigned __int64* workerBatchCount;
     unsigned __int64 zero = 0;
 
@@ -843,8 +837,7 @@ void jqFlush(jqBatchGroup* GroupID, unsigned __int64 batchCount)
     workerBatchCount = (batchCount) ? &zero : &BatchCount;
     while (1)
     {
-        Target = 0;
-        InterlockedExchange(&Target, 0);
+        tlMemoryFence();
         if (!(GroupID->QueuedBatchCount + *ExecutingBatchCount) && GroupID->BatchCount <= batchCount)
         {
             break;

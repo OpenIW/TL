@@ -6,6 +6,16 @@ phys_memory_manager* g_phys_memory_manager;
 
 #define allocation_owner 0xFEDCBA98
 
+phys_slot_pool* phys_slot_pool::get_hash_next()
+{
+	return m_hash_next;
+}
+
+void phys_slot_pool::set_hash_next(phys_slot_pool* hash)
+{
+	m_hash_next = hash;
+}
+
 int phys_slot_pool::get_count()
 {
 	return m_map_key;
@@ -75,10 +85,26 @@ void phys_slot_pool::extra_info_free(void* slot)
 
 void phys_slot_pool::extra_info_init(void* slot)
 {
+	extra_info* ei;
+	if (slot)
+	{
+		ei = get_ei(slot, get_count());
+		ei->m_slot_pool_owner = this;
+		ei->m_allocation_owner = (void*)allocation_owner;
+		tlAtomicIncrement(&m_total_slot_count);
+		tlAtomicIncrement(&m_allocated_slot_count);
+		tlAssert(m_allocated_slot_count <= m_total_slot_count);
+		tlMemoryFence();
+	}
 }
 
 void phys_slot_pool::free_slot(void* slot)
 {
+	UNIMPLEMENTED(__FUNCTION__);
+	return;
+
+	tlAssert(slot);
+	extra_info_free(slot);
 }
 
 void phys_slot_pool::init(unsigned int slot_size, unsigned int slot_alignment)
@@ -102,25 +128,66 @@ void phys_slot_pool::validate_slot(void* slot)
 
 int phys_memory_manager::allocate(unsigned int size, unsigned int alignment)
 {
-	return 0;
+	char* alignedPos;
+
+	while (1)
+	{
+		alignedPos = PHYS_ALIGN(m_buffer_cur, alignment);
+		if (alignedPos + size > m_buffer_end)
+		{
+			return 0;
+		}
+		if (_InterlockedCompareExchange((volatile LONG*)m_buffer_cur, (int)(alignedPos + size), *m_buffer_cur) == *m_buffer_cur)
+		{
+			return (int)alignedPos;
+		}
+	}
 }
 
 phys_slot_pool* phys_memory_manager::allocate_slot_pool()
 {
-	return nullptr;
+	phys_slot_pool* slotPool;
+
+	m_slot_pool_allocate_mutex.Lock();
+	if (m_list_preallocated_slot_pools_count >= 28)
+	{
+		slotPool = (phys_slot_pool*)allocate(sizeof(phys_slot_pool), 8);
+	}
+	else
+	{
+		slotPool = &m_list_preallocated_slot_pools[m_list_preallocated_slot_pools_count++];
+	}
+	++m_list_slot_pool_count;
+	m_slot_pool_allocate_mutex.Unlock();
+	return slotPool;
 }
 
 phys_slot_pool* phys_memory_manager::get_slot_pool(unsigned int slot_size, unsigned int slot_alignment)
 {
-	unsigned int sizeAlignment;
-	phys_slot_pool* i;
-	phys_slot_pool* j;
+	unsigned int key;
+	phys_slot_pool* slotPool;
 
 	tlAssert(slot_alignment >= 4);
 	tlAssert(slot_size % slot_alignment == 0);
-	sizeAlignment = phys_slot_pool::encode_size_alignment(slot_size + 8, slot_alignment);
 
-	// TODO
+	key = phys_slot_pool::encode_size_alignment(slot_size + 8, slot_alignment);
+	m_slot_pool_map_mutex.ReadLock();
+	slotPool = m_slot_pool_map.find(key);
+	m_slot_pool_map_mutex.ReadUnlock();
+
+	if (!slotPool)
+	{
+		m_slot_pool_map_mutex.WriteLock();
+		slotPool = m_slot_pool_map.find(key);
+		if (!slotPool)
+		{
+			slotPool = allocate_slot_pool();
+			slotPool->init(slot_size + 8, slot_alignment);
+			m_slot_pool_map.add(key, slotPool);
+		}
+		m_slot_pool_map_mutex.WriteUnlock();
+	}
+	return slotPool;
 }
 
 phys_memory_manager::phys_memory_manager(void* memory_buffer, int memory_buffer_size)
@@ -140,6 +207,11 @@ phys_memory_manager::phys_memory_manager(void* memory_buffer, int memory_buffer_
 	m_slot_pool_map.m_total_collisions = 0;
 	m_slot_pool_map.m_mod = 1;
 	m_list_preallocated_slot_pools_count = 0;
+}
+
+char* PHYS_ALIGN(char* pos, int alignment)
+{
+	return tl_align<char>(pos, alignment);
 }
 
 void phys_memory_manager_init(void* memory_buffer, const int memory_buffer_size)

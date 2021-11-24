@@ -296,6 +296,16 @@ template<typename T, unsigned int I>
 inline void jqAtomicQueue<T, I>::AllocateNodeBlock(int Count)
 {
 	UNIMPLEMENTED(__FUNCTION__);
+	return;
+
+	NodeType* allocation;
+	int i;
+
+	allocation = (NodeType*)tlMemAlloc(sizeof(NodeType) * Count, 8, 0);
+	for (i = 0; i < Count - 1; ++i)
+	{
+		allocation->Next = &allocation[i];
+	}
 }
 
 template<typename T, unsigned int I>

@@ -244,6 +244,11 @@ public:
     }
 };
 
+static void tlAtomicIncrement(volatile int* var)
+{
+    _InterlockedExchangeAdd((volatile LONG*)var, 1);
+}
+
 static unsigned int tlAtomicAdd(volatile unsigned int* var, unsigned int value)
 {
     volatile unsigned int i;
