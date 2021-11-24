@@ -231,14 +231,14 @@ jqBatchPool jqPool;
 jqQueue jqGlobalQueue;
 jqQueue jqHighPriorityQueue;
 void(__cdecl* jqWorkerInitFn)(int);
-LONG jqKeepWorkersAwakeCount;
-LONG jqSleepingWorkersCount;
-LONG jqPoolLock;
-LONG jqBatchPoolExternallyLockedCount;
+int jqKeepWorkersAwakeCount;
+int jqSleepingWorkersCount;
+int jqPoolLock;
+int jqBatchPoolExternallyLockedCount;
 bool jqStopSignal;
 HANDLE jqNewJobAdded;
 const char* jqCheckContext;
-LONG jqNextAvailTempWorker;
+int jqNextAvailTempWorker;
 
 __declspec(thread) jqQueue* jqCurQueue;
 __declspec(thread) jqWorker* jqCurWorker;
@@ -367,7 +367,7 @@ void jqSetWorkerInitFunction(void(*fn)(int))
 void jqLetWorkersSleep()
 {
     tlAssert(jqKeepWorkersAwakeCount > 0);
-    _InterlockedExchangeAdd(&jqKeepWorkersAwakeCount, 0xFFFFFFFF);
+    tlAtomicDecrement(&jqKeepWorkersAwakeCount);
 }
 
 char* jqAllocBatchData(unsigned int Size)
@@ -407,9 +407,9 @@ jqBoolean jqWorkerSleep()
         {
             break;
         }
-        _InterlockedExchangeAdd(&jqSleepingWorkersCount, 1u);
+        tlAtomicIncrement(&jqSleepingWorkersCount);
         WaitForSingleObject(jqNewJobAdded, 1u);
-        _InterlockedExchangeAdd(&jqSleepingWorkersCount, 0xFFFFFFFF);
+        tlAtomicDecrement(&jqSleepingWorkersCount);
     }
     SwitchToThread();
     tlMemoryFence();
@@ -626,12 +626,12 @@ void jqAlertWorkers()
 void jqUnlockBatchPoolInternal()
 {
     tlMemoryFence();
-    while (InterlockedCompareExchange(&jqPoolLock, 0, 1) != 1);
+    tlAtomicCompareAndSwap(&jqPoolLock, 0, 1);
 }
 
 void jqKeepWorkersAwake()
 {
-    InterlockedExchangeAdd(&jqKeepWorkersAwakeCount, 1u);
+    tlAtomicIncrement(&jqKeepWorkersAwakeCount);
     if (jqKeepWorkersAwakeCount > 0)
     {
         PulseEvent(jqNewJobAdded);
@@ -641,9 +641,11 @@ void jqKeepWorkersAwake()
 void jqUnlockBatchPool()
 {
     tlAssert(jqBatchPoolExternallyLockedCount > 0);
-    InterlockedExchangeAdd(&jqBatchPoolExternallyLockedCount, 0xFFFFFFFF);
+    tlAtomicDecrement(&jqBatchPoolExternallyLockedCount);
     if (!jqBatchPoolExternallyLockedCount)
+    {
         PulseEvent(jqNewJobAdded);
+    }
     jqUnlockBatchPoolInternal();
 }
 
@@ -870,12 +872,12 @@ void jqAssistWithBatches(bool(__cdecl* callback)(void*), void* context, jqBatchG
     {
         tlAssert(callback);
         tlAssert(jqNextAvailTempWorker < JQ_MAX_TEMP_WORKERS);
-        tmpWorker = &jqTempWorkers[InterlockedExchangeAdd(&jqNextAvailTempWorker, 1u)];
+        tmpWorker = &jqTempWorkers[tlAtomicIncrement(&jqNextAvailTempWorker)];
         tmpWorker->Processor = -1;
         tmpWorker->NumQueues = 1;
         tmpWorker->Queues[0] = &jqGlobalQueue;
         jqTempWorkerLoop(tmpWorker, GroupID, callback, context);
-        InterlockedExchangeAdd(&jqNextAvailTempWorker, INFINITE);
+        tlAtomicDecrement(&jqNextAvailTempWorker);
     }
 }
 

@@ -244,9 +244,23 @@ public:
     }
 };
 
-static void tlAtomicIncrement(volatile int* var)
+static int tlAtomicIncrement(volatile int* var)
 {
-    _InterlockedExchangeAdd((volatile LONG*)var, 1);
+    return _InterlockedExchangeAdd((volatile LONG*)var, 1);
+}
+
+static int tlAtomicDecrement(volatile int* var)
+{
+    return _InterlockedExchangeAdd((volatile LONG*)var, -1);
+}
+
+static int tlAtomicCompareAndSwap(volatile int* var, unsigned int exchange, unsigned int comperand)
+{
+    int value = *var;
+
+    while (_InterlockedCompareExchange((volatile LONG*)var, exchange, comperand) != 1);
+
+    return value;
 }
 
 static unsigned int tlAtomicAdd(volatile unsigned int* var, unsigned int value)

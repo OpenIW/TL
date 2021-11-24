@@ -53,13 +53,10 @@ void phys_slot_pool::extra_info_allocate(void* slot)
 	tlAssert(slot);
 	tlAssert(ei->m_slot_pool_owner == this);
 
-	if ((phys_slot_pool*)InterlockedCompareExchange((volatile LONG*)ei->m_slot_pool_owner->m_first_free_slot.m_tag, 0xFEDCBA98, (LONG)this) != this) 
-	{
-		tlAssert(false);
-	}
-	InterlockedExchangeAdd((volatile LONG*)&m_allocated_slot_count, 1);
+	tlAssert(!tlAtomicCompareAndSwap(&ei->m_slot_pool_owner->m_first_free_slot.m_tag, 0xFEDCBA98, (LONG)this));
+	tlAtomicIncrement(&m_allocated_slot_count);
 	tlAssert(m_allocated_slot_count <= m_total_slot_count);
-	InterlockedExchange((volatile LONG*)&slot, 0);
+	tlMemoryFence();
 }
 
 void phys_slot_pool::extra_info_free(void* slot)
@@ -72,15 +69,12 @@ void phys_slot_pool::extra_info_free(void* slot)
 	memset(slot, 0xFF, m_map_key - 8);
 	tlAssert(ei->m_slot_pool_owner == this);
 
-	if (InterlockedCompareExchange((volatile LONG*)ei->m_slot_pool_owner->m_first_free_slot.m_tag, (LONG)this, 0xFEDCBA98) != 0xFEDCBA98)
-	{
-		tlAssert(false);
-	}
+	tlAssert(tlAtomicCompareAndSwap(&ei->m_slot_pool_owner->m_first_free_slot.m_tag, (LONG)this, 0xFEDCBA98));
 
-	InterlockedExchangeAdd((volatile LONG*)&m_allocated_slot_count, INFINITE);
+	tlAtomicDecrement(&m_allocated_slot_count);
 	tlAssert(m_allocated_slot_count <= m_total_slot_count);
 	tlAssert(m_allocated_slot_count >= 0);
-	InterlockedExchange((volatile LONG*)&slot, 0);
+	tlMemoryFence();
 }
 
 void phys_slot_pool::extra_info_init(void* slot)

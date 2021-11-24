@@ -6,7 +6,7 @@
 volatile struct tagged_void_pointer_t
 {
 	void* m_ptr;
-	unsigned int m_tag;
+	int m_tag;
 
 	void set(void* value)
 	{
