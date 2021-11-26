@@ -218,6 +218,7 @@ void jqEnableWorkers(unsigned int ProcessorsMask);
 int jqGetNumWorkers();
 unsigned __int64 jqGetCurrentThreadID();
 unsigned __int64 jqGetMainThreadID();
+jqBatchPool* jqGetPool();
 jqBatch* jqGetCurrentBatch();
 jqWorker* jqGetCurrentWorker();
 jqQueue* jqGetWorkerQueue(int worker);
@@ -234,7 +235,7 @@ void jqFreeBatchData(void* Ptr);
 unsigned int jqGetBatchDataAvailable();
 int jqExecuteBatch(jqWorker* Worker, jqBatch* Batch);
 bool jqCanBatchExecute();
-jqBoolean jqWorkerSleep();
+jqBoolean jqWorkerSleep(jqWorker* Worker);
 void jqSetCheckContext(const char* desc);
 void jqCheckDMALS(const void* addr);
 void jqCheckDMAMain(const void* addr);
@@ -272,7 +273,7 @@ void jqAddBatchToQueue(const jqBatch* Batch, jqQueue* Queue);
 void jqAddBatch(const jqBatch* Batch, jqQueue* Queue);
 void jqAddBatch(const jqModule* Module, void* Input, void* Output, jqBatchGroup* GroupID, jqQueue* Queue, void* ParamData, int ParamSize);
 void jqSkipBatch();
-bool jqPopNextBatchFromQueue(jqWorker* Worker, jqQueue* Queue, jqBatchGroup* GroupID);
+bool jqPopNextBatchFromQueue(jqWorker* Worker, jqQueue* Queue, jqBatchGroup* GroupID, jqBatch* PoppedBatch);
 bool jqPopNextBatch(jqWorker* Worker, bool* doHighPriority, jqBatchGroup* GroupID, jqBatch* PoppedBatch);
 void jqWorkerLoop(jqWorker* Worker, jqBatchGroup* GroupID, bool BreakWhenEmpty, unsigned __int64* batchCount);
 void jqTempWorkerLoop(jqWorker* Worker, jqBatchGroup* GroupID, bool(__cdecl* callback)(void*), void* context);
@@ -295,41 +296,110 @@ inline unsigned __int64 jqGet(unsigned __int64* Cell)
 template<typename T, unsigned int I>
 inline void jqAtomicQueue<T, I>::AllocateNodeBlock(int Count)
 {
-	UNIMPLEMENTED(__FUNCTION__);
-	return;
+	// clean this later, because fuck this.
 
-	NodeType* allocation;
-	int i;
+	int v2; // esi
+	NodeType* v4; // eax MAPDST
+	int v6; // ebx
+	NodeType** v7; // ecx
 
-	allocation = (NodeType*)tlMemAlloc(sizeof(NodeType) * Count, 8, 0);
-	for (i = 0; i < Count - 1; ++i)
+	v2 = Count << 7;
+	v4 = (NodeType*)tlMemAlloc((Count << 7) + 8, 4u, 0);
+	if (Count - 1 > 0)
 	{
-		allocation->Next = &allocation[i];
+		v6 = Count - 1;
+		do
+		{
+			--v6;
+			v4->Next = v4 + 1;
+			++v4;
+		} while (v6);
 	}
+	v7 = (NodeType**)((char*)&v4->Next + v2);
+	*(v7 - 32) = 0;
+	*v7 = v4;
+	v7[1] = (NodeType*)this->NodeBlockListHead;
+	this->NodeBlockListHead = (NodeBlockEntry*)((char*)v4 + v2);
+	*this->FreeListPtr = v4;
 }
 
 template<typename T, unsigned int I>
 inline jqAtomicQueue<T, I>::NodeType* jqAtomicQueue<T, I>::AllocateNode()
 {
-	UNIMPLEMENTED(__FUNCTION__);
-	return nullptr;
+	FreeLock.Lock();
+
+	if (!*FreeListPtr)
+	{
+		AllocateNodeBlock(32);
+	}
+	(*FreeListPtr) = (*FreeListPtr)->Next;
+
+	FreeLock.Unlock();
+	return *FreeListPtr;
 }
 
 template<typename T, unsigned int I>
 inline void jqAtomicQueue<T, I>::Init(jqAtomicQueue<T, I>* SharedFreeList)
 {
-	UNIMPLEMENTED(__FUNCTION__);
+	NodeType* Node;
+
+	ThisPtr = this;
+	_FreeList = 0;
+	if (SharedFreeList)
+	{
+		FreeListPtr = SharedFreeList->FreeListPtr;
+	}
+	else
+	{
+		FreeListPtr = &_FreeList;
+	}
+
+	Node = AllocateNode();
+	Node->Next = 0;
+	Tail = Node;
+	Head = Node;
 }
 
 template<typename T, unsigned int I>
 inline void jqAtomicQueue<T, I>::Push(const jqBatch* Data)
 {
-	UNIMPLEMENTED(__FUNCTION__);
+	NodeType* Node;
+
+	Node = AllocateNode();
+	memcpy(&Node->Data, Data, sizeof(Node->Data));
+	Node->Next = 0;
+
+	TailLock.Lock();
+	ThisPtr->Tail->Next = Node;
+	ThisPtr->Tail = Node;
+	TailLock.Unlock();
 }
 
 template<typename T, unsigned int I>
 inline bool jqAtomicQueue<T, I>::Pop(jqBatch* p)
 {
-	UNIMPLEMENTED(__FUNCTION__);
-	return false;
+	NodeType* Node;
+	NodeType* Next;
+
+	HeadLock.Lock();
+	Next = ThisPtr->Head->Next;
+	Node = ThisPtr->Head;
+
+	if (Next)
+	{
+		memcpy(p, &Next->Data, sizeof(jqBatch));
+		ThisPtr->Head = Next;
+		HeadLock.Unlock();
+
+		FreeLock.Lock();
+		Node->Next = *FreeListPtr;
+		*FreeListPtr = Node;
+		FreeLock.Unlock();
+		return true;
+	}
+	else
+	{
+		HeadLock.Unlock();
+		return false;
+	}
 }

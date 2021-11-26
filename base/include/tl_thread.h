@@ -242,6 +242,14 @@ public:
             ThisPtr->LockCount = 1;
         }
     }
+    void Unlock()
+    {
+        if (LockCount-- == 1)
+        {
+            tlMemoryFence();
+            ThreadId = 0;
+        }
+    }
 };
 
 static int tlAtomicIncrement(volatile int* var)
@@ -299,4 +307,9 @@ static unsigned __int64 tlAtomicOr(volatile unsigned __int64* var, unsigned __in
 static unsigned int tlGetCurrentThreadId()
 {
     return GetCurrentThreadId();
+}
+
+static void tlYield()
+{
+    SwitchToThread();
 }

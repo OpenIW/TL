@@ -269,6 +269,11 @@ unsigned __int64 jqGetMainThreadID()
     return jqMainThreadID;
 }
 
+jqBatchPool* jqGetPool()
+{
+    return &jqPool;
+}
+
 jqBatch* jqGetCurrentBatch()
 {
     return jqCurBatch;
@@ -395,7 +400,7 @@ bool jqCanBatchExecute()
     return true;
 }
 
-jqBoolean jqWorkerSleep()
+jqBoolean jqWorkerSleep(jqWorker* Worker)
 {
     while (!jqPool.GroupID.QueuedBatchCount)
     {
@@ -411,7 +416,7 @@ jqBoolean jqWorkerSleep()
         WaitForSingleObject(jqNewJobAdded, 1u);
         tlAtomicDecrement(&jqSleepingWorkersCount);
     }
-    SwitchToThread();
+    tlYield();
     tlMemoryFence();
     return !jqStopSignal;
 }
@@ -780,26 +785,229 @@ void jqSkipBatch()
     jqAddBatch(jqCurBatch, jqCurQueue);
 }
 
-bool jqPopNextBatchFromQueue(jqWorker* Worker, jqQueue* Queue, jqBatchGroup* GroupID)
+bool jqPopNextBatchFromQueue(jqWorker* Worker, jqQueue* Queue, jqBatchGroup* GroupID, jqBatch* PoppedBatch)
 {
-    UNIMPLEMENTED(__FUNCTION__);
-    return false;
+    int CheckedBatches;
+    int BatchCount;
+    jqBatchGroup* PoppedGroup;
+    jqBatchPool* Pool;
+
+    CheckedBatches = 0;
+    while (1)
+    {
+        BatchCount = Queue->QueuedBatchCount;
+        if (!BatchCount
+            || CheckedBatches > BatchCount
+            || (++CheckedBatches, !Queue->Queue.Pop(PoppedBatch)))
+        {
+            return false;
+        }
+        PoppedGroup = PoppedBatch->GroupID;
+        if (!PoppedGroup)
+        {
+            PoppedGroup = &PoppedBatch->Module->Group;
+        }
+        jqCurQueue = Queue;
+        if ((!GroupID || GroupID == PoppedGroup))
+        {
+            break;
+        }
+        Queue->Queue.Push(PoppedBatch);
+    }
+    if (PoppedBatch->GroupID)
+    {
+        tlAtomicIncrement(&PoppedBatch->GroupID->ExecutingBatchCount);
+        tlAtomicDecrement(&PoppedBatch->GroupID->QueuedBatchCount);
+        tlAssert(PoppedBatch->GroupID->QueuedBatchCount >= 0);
+    }
+    tlAtomicIncrement(&PoppedBatch->Module->Group.ExecutingBatchCount);
+    tlAtomicDecrement(&PoppedBatch->Module->Group.QueuedBatchCount);
+    tlAtomicIncrement(&jqGetPool()->GroupID.ExecutingBatchCount);
+    tlAtomicDecrement(&jqGetPool()->GroupID.QueuedBatchCount);
+    tlAtomicDecrement(&Queue->QueuedBatchCount);
+    tlAssert(jqGetPool()->GroupID.QueuedBatchCount >= 0);
+    tlAssert(Queue->QueuedBatchCount >= 0);
 }
 
 bool jqPopNextBatch(jqWorker* Worker, bool* doHighPriority, jqBatchGroup* GroupID, jqBatch* PoppedBatch)
 {
-    UNIMPLEMENTED(__FUNCTION__);
-    return false;
+    jqQueue* queue;
+    int i;
+
+    if (jqPopNextBatchFromQueue(Worker, &Worker->WorkerSpecific, GroupID, PoppedBatch))
+    {
+        return true;
+    }
+
+    if (*doHighPriority && jqPopNextBatchFromQueue(Worker, &jqHighPriorityQueue, GroupID, PoppedBatch))
+    {
+        *doHighPriority = false;
+        return true;
+    }
+    else
+    {
+        for (i = 0; i < 8; ++i)
+        {
+            queue = Worker->Queues[i];
+            if (queue && jqPopNextBatchFromQueue(Worker, queue, GroupID, PoppedBatch))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 void jqWorkerLoop(jqWorker* Worker, jqBatchGroup* GroupID, bool BreakWhenEmpty, unsigned __int64* batchCount)
 {
-    UNIMPLEMENTED(__FUNCTION__);
+    u64 deltaTime;
+    u64 WorkerStartTime;
+    int ret;
+    u32 CachedConditionalValue;
+    void* CachedConditionalAddress;
+    u64 lastConditionalCheckTime;
+    bool doHighPriority;
+    jqBatch CurBatch;
+
+    if (jqWorkerInitFn && Worker->WorkerID > 0)
+    {
+        jqWorkerInitFn(Worker->WorkerID);
+    }
+    lastConditionalCheckTime = 0;
+    CachedConditionalAddress = 0;
+    CachedConditionalValue = 0;
+    jqCurWorker = Worker;
+    doHighPriority = 1;
+    CurBatch = jqBatch();
+    do
+    {
+        do
+        {
+            if (!jqPopNextBatch(Worker, &doHighPriority, GroupID, &CurBatch))
+            {
+                break;
+            }
+            jqCurBatch = &CurBatch;
+            ret = 1;
+            WorkerStartTime = tlPcGetTick().QuadPart;
+            if (CachedConditionalAddress == CurBatch.ConditionalAddress
+                && CachedConditionalValue == CurBatch.ConditionalValue)
+            {
+                CurBatch.ConditionalAddress = 0;
+            }
+            if (CurBatch.ConditionalAddress)
+            {
+                if (WorkerStartTime - lastConditionalCheckTime > 50000)
+                {
+                    if (*(unsigned int*)CurBatch.ConditionalAddress >= CurBatch.ConditionalValue)
+                    {
+                        CachedConditionalAddress = CurBatch.ConditionalAddress;
+                        CachedConditionalValue = CurBatch.ConditionalValue;
+                        CurBatch.ConditionalAddress = 0;
+                        ret = jqExecuteBatch(Worker, &CurBatch);
+                    }
+                    lastConditionalCheckTime = WorkerStartTime;
+                }
+            }
+            else
+            {
+                ret = jqExecuteBatch(Worker, &CurBatch);
+            }
+
+            if (!ret)
+            {
+                deltaTime = tlPcGetTick().QuadPart - WorkerStartTime;
+                Worker->WorkTime += deltaTime;
+                doHighPriority = 1;
+            }
+            if (ret == 2)
+            {
+                doHighPriority = 1;
+            }
+            jqCurBatch = 0;
+            if (ret)
+            {
+                tlAtomicIncrement(&jqGetPool()->GroupID.QueuedBatchCount);
+                tlAtomicIncrement(&CurBatch.Module->Group.QueuedBatchCount);
+                tlAtomicIncrement(&jqCurQueue->QueuedBatchCount);
+                if (CurBatch.GroupID)
+                {
+                    tlAtomicIncrement(&CurBatch.GroupID->QueuedBatchCount);
+                }
+                jqCurQueue->Queue.Push(&CurBatch);
+            }
+            tlAtomicDecrement(&jqGetPool()->GroupID.ExecutingBatchCount);
+            tlAtomicDecrement(&CurBatch.Module->Group.ExecutingBatchCount);
+            if (CurBatch.GroupID)
+            {
+                tlAtomicDecrement(&CurBatch.GroupID->ExecutingBatchCount);
+            }
+
+        } while ( (!BreakWhenEmpty || !ret) && (!batchCount || *batchCount) );
+        doHighPriority = 1;
+
+    } while ( !BreakWhenEmpty && jqWorkerSleep(Worker) );
+    jqCurWorker = 0;
 }
 
 void jqTempWorkerLoop(jqWorker* Worker, jqBatchGroup* GroupID, bool(__cdecl* callback)(void*), void* context)
 {
-    UNIMPLEMENTED(__FUNCTION__);
+    u64 deltaTime;
+    int ret;
+    u64 WorkerStartTime;
+    int numJobs;
+    bool doHighPriority;
+    jqBatch CurBatch;
+
+    jqCurWorker = Worker;
+    CurBatch = jqBatch();
+    
+    while ((callback(context) & 1) == 0)
+    {
+        numJobs = jqGetQueuedBatchCount(0);
+        while (jqPopNextBatch(Worker, &doHighPriority, GroupID, &CurBatch))
+        {
+            WorkerStartTime = tlPcGetTick().QuadPart;
+            jqCurBatch = &CurBatch;
+            ret = jqExecuteBatch(Worker, &CurBatch);
+            jqCurBatch = 0;
+            if (ret)
+            {
+                tlAtomicIncrement(&jqGetPool()->GroupID.QueuedBatchCount);
+                tlAtomicIncrement(&CurBatch.Module->Group.QueuedBatchCount);
+                tlAtomicIncrement(&jqCurQueue->QueuedBatchCount);
+                if (CurBatch.GroupID)
+                {
+                    tlAtomicIncrement(&CurBatch.GroupID->QueuedBatchCount);
+                }
+                jqCurQueue->Queue.Push(&CurBatch);
+            }
+            else
+            {
+                deltaTime = tlPcGetTick().QuadPart - WorkerStartTime;
+                Worker->WorkTime += deltaTime;
+                doHighPriority = 1;
+            }
+            if (ret == 2)
+            {
+                doHighPriority = 1;
+            }
+            tlAtomicDecrement(&jqGetPool()->GroupID.ExecutingBatchCount);
+            tlAtomicDecrement(&CurBatch.Module->Group.ExecutingBatchCount);
+            if (CurBatch.GroupID)
+            {
+                tlAtomicDecrement(&CurBatch.GroupID->ExecutingBatchCount);
+            }
+            if (ret)
+            {
+                if (--numJobs > 0)
+                {
+                    continue;
+                }
+            }
+        }
+    }
+    jqCurWorker = 0;
 }
 
 unsigned int jqWorkerThread(void* _this)

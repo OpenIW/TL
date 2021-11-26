@@ -14,6 +14,7 @@
 #define tlAssert(cond) if (!(cond) && !_tlAssert(__FILE__, __LINE__, "%s", #cond)) { __debugbreak(); }
 
 typedef unsigned int u32;
+typedef unsigned __int64 u64;
 
 struct tlFileBuf {
 	char* Buf;
