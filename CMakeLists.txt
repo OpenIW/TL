@@ -35,6 +35,8 @@ add_library(tl STATIC
     ${SRC}
 )
 
+target_include_directories(${PROJECT_NAME} PUBLIC base/include jobqueue physics/include)
+
 add_virtual_path(tl)
 
 target_compile_definitions(tl PUBLIC
