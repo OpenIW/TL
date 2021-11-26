@@ -257,7 +257,7 @@ void tlWarning(const char* Format, ...)
 
 bool tlReadFile(const char *FileName, tlFileBuf *File, unsigned int Align, unsigned int Flags)
 {
-    UNIMPLEMENTED(__FUNCTION__);
+    tlUNIMPLEMENTED(__FUNCTION__);
     return 0;
 }
 

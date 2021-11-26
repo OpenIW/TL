@@ -94,7 +94,7 @@ void phys_slot_pool::extra_info_init(void* slot)
 
 void phys_slot_pool::free_slot(void* slot)
 {
-	UNIMPLEMENTED(__FUNCTION__);
+	tlUNIMPLEMENTED(__FUNCTION__);
 	return;
 
 	tlAssert(slot);
