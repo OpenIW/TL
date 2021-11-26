@@ -2,6 +2,7 @@
 
 #define JQ_MAX_TEMP_WORKERS 16
 #define JQ_ATOMIC_HEAP_MAX_LEVELS 11
+#define JQ_MAX_QUEUES 8
 
 jqBatchGroup::jqBatchGroup()
 {
@@ -246,7 +247,33 @@ __declspec(thread) jqBatch* jqCurBatch;
 
 void jqAttachQueueToWorkers(jqQueue* Queue, unsigned int ProcessorMask)
 {
-    UNIMPLEMENTED(__FUNCTION__);
+    int numQueues;
+    jqWorker* Worker;
+    u32 Processor;
+    u32 BaseProcessorsMask;
+    int id;
+
+    id = -1;
+    BaseProcessorsMask = jqProcessorsMask;
+    Processor = 1;
+    while (BaseProcessorsMask)
+    {
+        while ((Processor & BaseProcessorsMask) == 0)
+            Processor *= 2;
+        ++id;
+        BaseProcessorsMask ^= Processor;
+        if ((ProcessorMask & Processor) != 0)
+        {
+            Worker = &jqWorkers[id];
+            do
+            {
+                numQueues = Worker->NumQueues;
+                tlAssert(numQueues < JQ_MAX_QUEUES);
+            } while (!tlAtomicCompareAndSwap((volatile int*)&Worker->Queues[numQueues], (int)Queue, 0LL));
+            tlAtomicIncrement(&Worker->NumQueues);
+            Queue->ProcessorsMask |= Worker->Processor;
+        }
+    }
 }
 
 void jqEnableWorkers(unsigned int ProcessorsMask)
