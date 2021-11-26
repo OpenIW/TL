@@ -261,11 +261,6 @@ bool tlReadFile(const char *FileName, tlFileBuf *File, unsigned int Align, unsig
     return 0;
 }
 
-int tl_align(int dest, int align)
-{
-    return (dest + align - 1) & ~(align - 1);
-}
-
 int tlCeilDiv(int Dividend, int Divisor)
 {
     return (Dividend + Divisor - 1) / Divisor;

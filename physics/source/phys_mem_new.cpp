@@ -205,7 +205,7 @@ phys_memory_manager::phys_memory_manager(void* memory_buffer, int memory_buffer_
 
 char* PHYS_ALIGN(char* pos, int alignment)
 {
-	return tl_align<char>(pos, alignment);
+	return (char*)tl_align((int)pos, alignment);
 }
 
 void phys_memory_manager_init(void* memory_buffer, const int memory_buffer_size)

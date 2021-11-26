@@ -189,14 +189,14 @@ void jqAtomicHeap::Init(void* _HeapBase, unsigned int _HeapSize, unsigned int _B
         Levels[j].BlockSize = BlockSize << j;
         Levels[j].NBlocks = 1 << (NLevels - 1 - j);
         Levels[j].NCells = tlCeilDiv(Levels[j].NBlocks, 64);
-        i += (int)tl_align<char>((char*)(Levels[j].NBlocks), 1024) / 8;
+        i += tl_align((Levels[j].NBlocks), 1024) / 8;
     }
     LevelData = (unsigned char*)tlMemAlloc(2 * i, 128, 0);
     memset(LevelData, 0, 2 * i);
     nextCell = (unsigned __int64*)&LevelData[i];
     for (k = 0; k < NLevels; ++k)
     {
-        align = (int)tl_align<char>((char*)(Levels[k].NBlocks), 1024) / 8;
+        align = tl_align((Levels[k].NBlocks), 1024) / 8;
         Levels[k].CellAvailable = (unsigned __int64*)LevelData;
         Levels[k].CellAllocated = nextCell;
         nextCell += align;

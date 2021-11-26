@@ -100,11 +100,107 @@ public:
 	tlAtomicMutex TailLock;
 	jqAtomicQueue<T, I>* ThisPtr;
 
-	void AllocateNodeBlock(int Count);
-	NodeType* AllocateNode();
-	void Init(jqAtomicQueue<T, I>* SharedFreeList);
-	void Push(const jqBatch* Data);
-	bool Pop(jqBatch* p);
+	void AllocateNodeBlock(int Count)
+	{
+		// clean this later, because fuck this.
+
+		int v2; // esi
+		NodeType* v4; // eax MAPDST
+		int v6; // ebx
+		NodeType** v7; // ecx
+
+		v2 = Count << 7;
+		v4 = (NodeType*)tlMemAlloc((Count << 7) + 8, 4u, 0);
+		if (Count - 1 > 0)
+		{
+			v6 = Count - 1;
+			do
+			{
+				--v6;
+				v4->Next = v4 + 1;
+				++v4;
+			} while (v6);
+		}
+		v7 = (NodeType**)((char*)&v4->Next + v2);
+		*(v7 - 32) = 0;
+		*v7 = v4;
+		v7[1] = (NodeType*)this->NodeBlockListHead;
+		this->NodeBlockListHead = (NodeBlockEntry*)((char*)v4 + v2);
+		*this->FreeListPtr = v4;
+	}
+	NodeType* AllocateNode()
+	{
+		FreeLock.Lock();
+
+		if (!*FreeListPtr)
+		{
+			AllocateNodeBlock(32);
+		}
+		(*FreeListPtr) = (*FreeListPtr)->Next;
+
+		FreeLock.Unlock();
+		return *FreeListPtr;
+	}
+	void Init(jqAtomicQueue<T, I>* SharedFreeList)
+	{
+		NodeType* Node;
+
+		ThisPtr = this;
+		_FreeList = 0;
+		if (SharedFreeList)
+		{
+			FreeListPtr = SharedFreeList->FreeListPtr;
+		}
+		else
+		{
+			FreeListPtr = &_FreeList;
+		}
+
+		Node = AllocateNode();
+		Node->Next = 0;
+		Tail = Node;
+		Head = Node;
+	}
+	void Push(const jqBatch* Data)
+	{
+		NodeType* Node;
+
+		Node = AllocateNode();
+		memcpy(&Node->Data, Data, sizeof(Node->Data));
+		Node->Next = 0;
+
+		TailLock.Lock();
+		ThisPtr->Tail->Next = Node;
+		ThisPtr->Tail = Node;
+		TailLock.Unlock();
+	}
+	bool Pop(jqBatch* p)
+	{
+		NodeType* Node;
+		NodeType* Next;
+
+		HeadLock.Lock();
+		Next = ThisPtr->Head->Next;
+		Node = ThisPtr->Head;
+
+		if (Next)
+		{
+			memcpy(p, &Next->Data, sizeof(jqBatch));
+			ThisPtr->Head = Next;
+			HeadLock.Unlock();
+
+			FreeLock.Lock();
+			Node->Next = *FreeListPtr;
+			*FreeListPtr = Node;
+			FreeLock.Unlock();
+			return true;
+		}
+		else
+		{
+			HeadLock.Unlock();
+			return false;
+		}
+	}
 };
 
 class jqAtomicHeap
@@ -291,115 +387,4 @@ inline unsigned __int64 jqGet(unsigned __int64* Cell)
 
 	*(unsigned __int64*)((char*)&result + 4) = *Cell;
 	return result;
-}
-
-template<typename T, unsigned int I>
-inline void jqAtomicQueue<T, I>::AllocateNodeBlock(int Count)
-{
-	// clean this later, because fuck this.
-
-	int v2; // esi
-	NodeType* v4; // eax MAPDST
-	int v6; // ebx
-	NodeType** v7; // ecx
-
-	v2 = Count << 7;
-	v4 = (NodeType*)tlMemAlloc((Count << 7) + 8, 4u, 0);
-	if (Count - 1 > 0)
-	{
-		v6 = Count - 1;
-		do
-		{
-			--v6;
-			v4->Next = v4 + 1;
-			++v4;
-		} while (v6);
-	}
-	v7 = (NodeType**)((char*)&v4->Next + v2);
-	*(v7 - 32) = 0;
-	*v7 = v4;
-	v7[1] = (NodeType*)this->NodeBlockListHead;
-	this->NodeBlockListHead = (NodeBlockEntry*)((char*)v4 + v2);
-	*this->FreeListPtr = v4;
-}
-
-template<typename T, unsigned int I>
-inline jqAtomicQueue<T, I>::NodeType* jqAtomicQueue<T, I>::AllocateNode()
-{
-	FreeLock.Lock();
-
-	if (!*FreeListPtr)
-	{
-		AllocateNodeBlock(32);
-	}
-	(*FreeListPtr) = (*FreeListPtr)->Next;
-
-	FreeLock.Unlock();
-	return *FreeListPtr;
-}
-
-template<typename T, unsigned int I>
-inline void jqAtomicQueue<T, I>::Init(jqAtomicQueue<T, I>* SharedFreeList)
-{
-	NodeType* Node;
-
-	ThisPtr = this;
-	_FreeList = 0;
-	if (SharedFreeList)
-	{
-		FreeListPtr = SharedFreeList->FreeListPtr;
-	}
-	else
-	{
-		FreeListPtr = &_FreeList;
-	}
-
-	Node = AllocateNode();
-	Node->Next = 0;
-	Tail = Node;
-	Head = Node;
-}
-
-template<typename T, unsigned int I>
-inline void jqAtomicQueue<T, I>::Push(const jqBatch* Data)
-{
-	NodeType* Node;
-
-	Node = AllocateNode();
-	memcpy(&Node->Data, Data, sizeof(Node->Data));
-	Node->Next = 0;
-
-	TailLock.Lock();
-	ThisPtr->Tail->Next = Node;
-	ThisPtr->Tail = Node;
-	TailLock.Unlock();
-}
-
-template<typename T, unsigned int I>
-inline bool jqAtomicQueue<T, I>::Pop(jqBatch* p)
-{
-	NodeType* Node;
-	NodeType* Next;
-
-	HeadLock.Lock();
-	Next = ThisPtr->Head->Next;
-	Node = ThisPtr->Head;
-
-	if (Next)
-	{
-		memcpy(p, &Next->Data, sizeof(jqBatch));
-		ThisPtr->Head = Next;
-		HeadLock.Unlock();
-
-		FreeLock.Lock();
-		Node->Next = *FreeListPtr;
-		*FreeListPtr = Node;
-		FreeLock.Unlock();
-		return true;
-	}
-	else
-	{
-		HeadLock.Unlock();
-		return false;
-	}
 }
