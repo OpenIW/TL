@@ -7,6 +7,16 @@
 jqBatchGroup::jqBatchGroup()
 {
     BatchCount = 0;
+    ExecutingBatchCount = 0;
+    QueuedBatchCount = 0;
+}
+
+jqModule::jqModule(const char* Name, jqWorkerType Type, int(__cdecl* Code)(jqBatch*), jqBatchGroup Group)
+{
+    this->Name = Name;
+    this->Type = Type;
+    this->Code = Code;
+    this->Group = Group;
 }
 
 jqBatch::jqBatch()
@@ -178,7 +188,8 @@ void jqAtomicHeap::Init(void* _HeapBase, unsigned int _HeapSize, unsigned int _B
     ThisPtr = this;
     TotalUsed = 0;
     TotalBlocks = 0;
-    for (NLevels = 1; BlockSize < HeapSize; BlockSize *= 2)
+    NLevels = 1;
+    for (i = BlockSize; i < HeapSize; i *= 2)
     {
         ++NLevels;
     }
@@ -228,7 +239,7 @@ unsigned __int64 jqMainThreadID;
 
 jqWorker* jqWorkers;
 jqWorker* jqTempWorkers;
-jqBatchPool jqPool;
+jqBatchPool jqPool = jqBatchPool();
 jqQueue jqGlobalQueue;
 jqQueue jqHighPriorityQueue;
 void(__cdecl* jqWorkerInitFn)(int);
@@ -269,7 +280,7 @@ void jqAttachQueueToWorkers(jqQueue* Queue, unsigned int ProcessorMask)
             {
                 numQueues = Worker->NumQueues;
                 tlAssert(numQueues < JQ_MAX_QUEUES);
-            } while (!tlAtomicCompareAndSwap((volatile int*)&Worker->Queues[numQueues], (int)Queue, 0LL));
+            } while (!tlAtomicCompareAndSwap((volatile int*)&Worker->Queues[numQueues], (int)Queue, 0));
             tlAtomicIncrement(&Worker->NumQueues);
             Queue->ProcessorsMask |= Worker->Processor;
         }
@@ -698,7 +709,7 @@ void jqSetBatchDataHeapSize(unsigned int Size, unsigned int BlockSize)
 
 void jqInit()
 {
-    jqAtomicQueue<jqBatch, 32>::NodeType* Node;
+    jqAtomicQueue<jqBatch, 32>::NodeType* Node = new jqAtomicQueue<jqBatch,32>::NodeType();
 
     jqPool.ThisPtr = &jqPool;
     jqPool.BaseQueue.Queue.ThisPtr = &jqPool.BaseQueue.Queue;
@@ -736,20 +747,12 @@ void jqInitQueue(jqQueue* Queue)
 
 void jqInitWorker(jqWorker* Worker)
 {
-    Worker->ThisPtr = Worker;
-    Worker->WorkerSpecific.ThisPtr = &Worker->WorkerSpecific;
-    Worker->WorkerSpecific.QueuedBatchCount = 0;
-    Worker->WorkerSpecific.Queue.Init(&jqPool.BaseQueue.Queue);
-    Worker->WorkerSpecific.ProcessorsMask = 0;
+    u32 i;
+
+    jqInitQueue(&Worker->WorkerSpecific);
     Worker->NumQueues = 0;
-    Worker->Queues[0] = 0;
-    Worker->Queues[1] = 0;
-    Worker->Queues[2] = 0;
-    Worker->Queues[3] = 0;
-    Worker->Queues[4] = 0;
-    Worker->Queues[5] = 0;
-    Worker->Queues[6] = 0;
-    Worker->Queues[7] = 0;
+    for (i = 0; i < 8; ++i)
+        Worker->Queues[i] = 0LL;
 }
 
 void jqAddBatchToQueue(const jqBatch* Batch, jqQueue* Queue)
@@ -835,7 +838,7 @@ bool jqPopNextBatchFromQueue(jqWorker* Worker, jqQueue* Queue, jqBatchGroup* Gro
             PoppedGroup = &PoppedBatch->Module->Group;
         }
         jqCurQueue = Queue;
-        if ((!GroupID || GroupID == PoppedGroup))
+        if ((!GroupID || GroupID->BatchCount == PoppedGroup->BatchCount))
         {
             break;
         }
@@ -1071,7 +1074,7 @@ void jqFlush(jqBatchGroup* GroupID, unsigned __int64 batchCount)
         ExecutingBatchCount = &jqPool.GroupID.ExecutingBatchCount;
     }
 
-    tlAssert(((u32)BatchCount & 7)==0);
+    tlAssert(((u32)GroupID & 7)==0);
     workerBatchCount = (batchCount) ? &zero : &BatchCount;
     while (1)
     {
@@ -1134,7 +1137,7 @@ void jqShutdown()
 
 void jqStart()
 {
-    int id, j, processor;
+    int id, j, Processor, ProcessorsMask;
 
     tlAssert(jqGetCurrentThreadID() == jqGetMainThreadID());
     // Stop any running jobqueue
@@ -1143,12 +1146,17 @@ void jqStart()
     // Init needed workers
     jqProcessorsMask |= 1;
     jqNWorkers = tlCountOnes(jqProcessorsMask);
-    jqWorkers = (jqWorker*)tlMemAlloc(jqNWorkers << 7, 8, 0);
-    memset(jqWorkers, 0, jqNWorkers << 7);
-    for (processor = jqProcessorsMask, j = 1, id = 0; (processor & j) == 0; j *= 2)
+    jqWorkers = (jqWorker*)tlMemAlloc(sizeof(jqWorker) * jqNWorkers, 8, 0);
+    id = 0;
+    ProcessorsMask = jqProcessorsMask;
+    Processor = 1;
+    while (ProcessorsMask)
     {
+        while ((Processor & ProcessorsMask) == 0)
+            Processor *= 2;
+        ProcessorsMask ^= Processor;
         jqInitWorker(&jqWorkers[id]);
-        jqWorkers[id].Processor = processor;
+        jqWorkers[id].Processor = Processor;
         jqWorkers[id].WorkerID = id;
         ++id;
     }

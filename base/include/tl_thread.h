@@ -228,9 +228,9 @@ public:
         unsigned __int64 CurThread;
 
         CurThread = GetCurrentThreadId();
-        if (ThreadId == CurThread)
+        if (ThisPtr->ThreadId == CurThread)
         {
-            ++LockCount;
+            ++ThisPtr->LockCount;
         }
         else
         {
@@ -244,10 +244,10 @@ public:
     }
     void Unlock()
     {
-        if (LockCount-- == 1)
+        if (ThisPtr->LockCount-- == 1)
         {
             tlMemoryFence();
-            ThreadId = 0;
+            ThisPtr->ThreadId = 0;
         }
     }
 };
@@ -262,13 +262,9 @@ static int tlAtomicDecrement(volatile int* var)
     return _InterlockedExchangeAdd((volatile LONG*)var, -1);
 }
 
-static int tlAtomicCompareAndSwap(volatile int* var, unsigned int exchange, unsigned int comperand)
+static bool tlAtomicCompareAndSwap(volatile int* var, unsigned int exchange, unsigned int comperand)
 {
-    int value = *var;
-
-    while (_InterlockedCompareExchange((volatile LONG*)var, exchange, comperand) != 1);
-
-    return value;
+    return _InterlockedCompareExchange((volatile LONG*)var, exchange, comperand) == comperand;
 }
 
 static unsigned int tlAtomicAdd(volatile unsigned int* var, unsigned int value)
