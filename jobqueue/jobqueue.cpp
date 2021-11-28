@@ -838,7 +838,7 @@ bool jqPopNextBatchFromQueue(jqWorker* Worker, jqQueue* Queue, jqBatchGroup* Gro
             PoppedGroup = &PoppedBatch->Module->Group;
         }
         jqCurQueue = Queue;
-        if ((!GroupID || GroupID->BatchCount == PoppedGroup->BatchCount))
+        if ((!GroupID || *GroupID == *PoppedGroup))
         {
             break;
         }
@@ -1140,7 +1140,7 @@ void jqStart()
     int id, j, Processor, ProcessorsMask;
 
     tlAssert(jqGetCurrentThreadID() == jqGetMainThreadID());
-    // Stop any running jobqueue
+    // Stop any running jobqueue which SHOULD NOT be running
     jqStop();
 
     // Init needed workers

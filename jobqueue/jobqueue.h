@@ -42,6 +42,17 @@ public:
         unsigned __int64 BatchCount;
     };
 
+    bool operator==(jqBatchGroup comperand)
+    {
+        if (QueuedBatchCount == comperand.QueuedBatchCount && ExecutingBatchCount == comperand.ExecutingBatchCount && BatchCount == comperand.BatchCount)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
     jqBatchGroup();
 };
 
@@ -105,6 +116,7 @@ public:
     void AllocateNodeBlock(int Count)
     {
         // clean this later, because fuck this.
+
         int i;
         int v2; // esi
         jqAtomicQueue<T,I>::NodeType* v4; // eax MAPDST
@@ -126,6 +138,8 @@ public:
     }
     NodeType* AllocateNode()
     {
+        // It was having an issue here, so I'm just going to leave the ida pseudocode for now...
+
         tlSharedAtomicMutex* p_FreeLock; // ebx
         jqAtomicQueue<T, I>::NodeType** FreeListPtr; // eax
         jqAtomicQueue<T, I>::NodeType* v4; // esi

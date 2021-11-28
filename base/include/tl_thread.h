@@ -214,6 +214,19 @@ public:
         }
         return 0;
     }
+
+    void Create()
+    {
+        ThisPtr = this;
+        ThreadId = 0;
+        LockCount = 0;
+    }
+
+    void Destroy()
+    {
+        ThreadId = 0;
+        ThisPtr = 0;
+    }
 };
 
 class tlSharedAtomicMutex
