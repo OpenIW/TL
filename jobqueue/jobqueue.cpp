@@ -376,18 +376,18 @@ jqWorker* jqFindWorkerForProcessor(jqProcessor Processor)
 
 jqBoolean jqPoll(jqBatchGroup* GroupID)
 {
-    unsigned __int64 BatchCount;
+    jqBatchGroup* BatchCount;
 
     if (GroupID)
     {
-        BatchCount = GroupID->BatchCount;
+        BatchCount = GroupID;
     }
     else
     {
-        BatchCount = jqPool.GroupID.BatchCount;
+        BatchCount = &jqPool.GroupID;
     }
     tlAssert(((unsigned int)BatchCount & 0x7) == 0);
-    return BatchCount != 0;
+    return BatchCount->BatchCount != 0;
 }
 
 bool jqAreJobsQueued(jqBatchGroup* GroupID)
