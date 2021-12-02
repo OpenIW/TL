@@ -79,28 +79,28 @@ public:
         unsigned __int64 CurThread;
 
         CurThread = GetCurrentThreadId();
-        if (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, CurThread) == CurThread)
+        if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, CurThread) == CurThread)
         {
-            _InterlockedExchangeAdd((volatile LONG*)&ThisPtr->WriteLockCount, 1);
+            InterlockedExchangeAdd((volatile LONG*)&ThisPtr->WriteLockCount, 1);
             return;
         }
 
         while (1)
         {
-            if (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
+            if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
             {
-                if (_InterlockedCompareExchange((volatile LONG*)&ThisPtr->ReadLockCount, 0, 0) == 0)
+                if (InterlockedCompareExchange((volatile LONG*)&ThisPtr->ReadLockCount, 0, 0) == 0)
                 {
                     break;
                 }
 
-                while (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, 0, CurThread) != CurThread) {}
+                while (InterlockedCompareExchange64((volatile __int64*)ThisPtr, 0, CurThread) != CurThread) {}
             }
 
             SwitchToThread();
         }
 
-        _InterlockedExchangeAdd((volatile LONG*)&ThisPtr->WriteLockCount, 1);
+        InterlockedExchangeAdd((volatile LONG*)&ThisPtr->WriteLockCount, 1);
         tlMemoryFence();
     }
 
@@ -109,24 +109,24 @@ public:
         unsigned __int64 CurThread;
 
         CurThread = GetCurrentThreadId();
-        if (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, CurThread) == CurThread)
+        if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, CurThread) == CurThread)
         {
-            _InterlockedExchangeAdd((volatile LONG*)&ThisPtr->ReadLockCount, 1);
+            InterlockedExchangeAdd((volatile LONG*)&ThisPtr->ReadLockCount, 1);
         }
         else
         {
             while (1)
             {
-                if (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
+                if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
                 {
                     break;
                 }
                 SwitchToThread();
             }
 
-            _InterlockedExchangeAdd((volatile LONG*)&ThisPtr->ReadLockCount, 1);
+            InterlockedExchangeAdd((volatile LONG*)&ThisPtr->ReadLockCount, 1);
 
-            while (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, 0, CurThread) != CurThread) {}
+            while (InterlockedCompareExchange64((volatile __int64*)ThisPtr, 0, CurThread) != CurThread) {}
         }
         tlMemoryFence();
     }
@@ -139,7 +139,7 @@ public:
         if (!/*Sys_*/InterlockedDecrement((volatile LONG*)&ThisPtr->WriteLockCount))
         {
             tlMemoryFence();
-            while (_InterlockedCompareExchange64((volatile signed __int64*)ThisPtr, 0, CurThread) != CurThread) {}
+            while (InterlockedCompareExchange64((volatile signed __int64*)ThisPtr, 0, CurThread) != CurThread) {}
         }
     }
 
@@ -171,7 +171,7 @@ public:
         {
             while (1)
             {
-                if (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
+                if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
                 {
                     break;
                 }
@@ -204,7 +204,7 @@ public:
         }
         else
         {
-            if (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
+            if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
             {
                 tlMemoryFence();
                 LockCount = 1;
@@ -247,7 +247,7 @@ public:
         }
         else
         {
-            while (_InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0))
+            while (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0))
             {
                 SwitchToThread();
             }
@@ -267,24 +267,24 @@ public:
 
 static int tlAtomicIncrement(volatile int* var)
 {
-    return _InterlockedExchangeAdd((volatile LONG*)var, 1);
+    return InterlockedExchangeAdd((volatile LONG*)var, 1);
 }
 
 static int tlAtomicDecrement(volatile int* var)
 {
-    return _InterlockedExchangeAdd((volatile LONG*)var, -1);
+    return InterlockedExchangeAdd((volatile LONG*)var, -1);
 }
 
 static bool tlAtomicCompareAndSwap(volatile int* var, unsigned int exchange, unsigned int comperand)
 {
-    return _InterlockedCompareExchange((volatile LONG*)var, exchange, comperand) == comperand;
+    return InterlockedCompareExchange((volatile LONG*)var, exchange, comperand) == comperand;
 }
 
 static unsigned int tlAtomicAdd(volatile unsigned int* var, unsigned int value)
 {
     volatile unsigned int i;
 
-    for (i = *var; _InterlockedCompareExchange((volatile LONG*)var, *var + value, *var) != i; i = *var)
+    for (i = *var; InterlockedCompareExchange((volatile LONG*)var, *var + value, *var) != i; i = *var)
     {
         Sleep(0);
     }
@@ -295,7 +295,7 @@ static unsigned __int64 tlAtomicAnd(volatile unsigned __int64* var, unsigned __i
 {
     signed __int64 v;
 
-    for (v = *var; _InterlockedCompareExchange64((volatile __int64*)var, value & v, v) != v; v = *var)
+    for (v = *var; InterlockedCompareExchange64((volatile __int64*)var, value & v, v) != v; v = *var)
     {
         Sleep(0);
     }
@@ -306,7 +306,7 @@ static unsigned __int64 tlAtomicOr(volatile unsigned __int64* var, unsigned __in
 {
     signed __int64 v;
 
-    for (v = *var; _InterlockedCompareExchange64((volatile __int64*)var, value | v, v) != v; v = *var)
+    for (v = *var; InterlockedCompareExchange64((volatile __int64*)var, value | v, v) != v; v = *var)
     {
         Sleep(0);
     }

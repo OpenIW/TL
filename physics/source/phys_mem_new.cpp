@@ -33,7 +33,7 @@ phys_slot_pool::extra_info* phys_slot_pool::get_ei(void* slot, int count)
 
 void* phys_slot_pool::allocate_slot()
 {
-	return nullptr;
+	return NULL;
 }
 
 unsigned int phys_slot_pool::encode_size_alignment(unsigned int size, unsigned int alignment)
@@ -131,7 +131,7 @@ int phys_memory_manager::allocate(unsigned int size, unsigned int alignment)
 		{
 			return 0;
 		}
-		if (_InterlockedCompareExchange((volatile LONG*)m_buffer_cur, (int)(alignedPos + size), *m_buffer_cur) == *m_buffer_cur)
+		if (InterlockedCompareExchange((volatile LONG*)m_buffer_cur, (int)(alignedPos + size), *m_buffer_cur) == *m_buffer_cur)
 		{
 			return (int)alignedPos;
 		}

@@ -1,17 +1,16 @@
 cmake_minimum_required(VERSION 3.17)
+
+# Compatibility with Microsoft Visual Studio 2008
+set(CMAKE_GENERATOR_TOOLSET v90)
 set(CMAKE_GENERATOR_PLATFORM win32)
+
 project(tl LANGUAGES CXX)
 
+# Determine if we're built as a subproject (using add_subdirectory) or if this is the master project.
 set(MASTER_PROJECT OFF)
-# Determine if we're built as a subproject (using add_subdirectory)
-# or if this is the master project.
 if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     set(MASTER_PROJECT ON)
 endif()
-
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 # source_group following the directory hierarchy
 function(add_virtual_path target_name)
