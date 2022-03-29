@@ -53,7 +53,7 @@ void phys_slot_pool::extra_info_allocate(void* slot)
 	tlAssert(slot);
 	tlAssert(ei->m_slot_pool_owner == this);
 
-	tlAssert(!tlAtomicCompareAndSwap(&ei->m_slot_pool_owner->m_first_free_slot.m_tag, 0xFEDCBA98, (LONG)this));
+	tlAssert(!tlAtomicCompareAndSwap((volatile u32*)&ei->m_slot_pool_owner->m_first_free_slot.m_tag, 0xFEDCBA98, (LONG)this));
 	tlAtomicIncrement(&m_allocated_slot_count);
 	tlAssert(m_allocated_slot_count <= m_total_slot_count);
 	tlMemoryFence();
@@ -69,7 +69,7 @@ void phys_slot_pool::extra_info_free(void* slot)
 	memset(slot, 0xFF, m_map_key - 8);
 	tlAssert(ei->m_slot_pool_owner == this);
 
-	tlAssert(tlAtomicCompareAndSwap(&ei->m_slot_pool_owner->m_first_free_slot.m_tag, (LONG)this, 0xFEDCBA98));
+	tlAssert(tlAtomicCompareAndSwap((volatile u32*)&ei->m_slot_pool_owner->m_first_free_slot.m_tag, (LONG)this, 0xFEDCBA98));
 
 	tlAtomicDecrement(&m_allocated_slot_count);
 	tlAssert(m_allocated_slot_count <= m_total_slot_count);

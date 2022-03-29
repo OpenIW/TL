@@ -26,6 +26,11 @@ bool tlReadFile(const char* FileName, tlFileBuf* File, unsigned int Align, unsig
 int tlCeilDiv(int Dividend, int Divisor);
 int tlCountOnes(int in);
 
+inline void tlDebugBreak()
+{
+	__asm int 3
+}
+
 inline int tl_align(int pos, int align)
 {
 	return (pos + align - 1) & ~(align - 1);

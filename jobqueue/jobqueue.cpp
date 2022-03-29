@@ -280,7 +280,7 @@ void jqAttachQueueToWorkers(jqQueue* Queue, unsigned int ProcessorMask)
             {
                 numQueues = Worker->NumQueues;
                 tlAssert(numQueues < JQ_MAX_QUEUES);
-            } while (!tlAtomicCompareAndSwap((volatile int*)&Worker->Queues[numQueues], (int)Queue, 0));
+            } while (!tlAtomicCompareAndSwap((volatile u64*)&Worker->Queues[numQueues], (u64)Queue, 0));
             tlAtomicIncrement(&Worker->NumQueues);
             Queue->ProcessorsMask |= Worker->Processor;
         }
@@ -669,7 +669,7 @@ void jqAlertWorkers()
 void jqUnlockBatchPoolInternal()
 {
     tlMemoryFence();
-    tlAtomicCompareAndSwap(&jqPoolLock, 0, 1);
+    tlAtomicCompareAndSwap((volatile u32*)&jqPoolLock, 0, 1);
 }
 
 void jqKeepWorkersAwake()

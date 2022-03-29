@@ -10,14 +10,14 @@ public:
 
 	void Lock()
 	{
-		while (InterlockedCompareExchange((volatile LONG*)m_token, 1, 0));
+		while (!tlAtomicCompareAndSwap(&this->m_token, 1u, 0));
 		tlMemoryFence();
 	}
 	void Unlock()
 	{
 		tlMemoryFence();
 		tlAssert(m_token == 1);
-		if (InterlockedCompareExchange((volatile LONG*)m_token, 0, 1) != 1)
+		if (!tlAtomicCompareAndSwap(&this->m_token, 0, 1u))
 		{
 			tlAssert(false);
 		}
@@ -31,20 +31,11 @@ public:
 
 	void ReadLock()
 	{
-		LONG Target[3];
-		unsigned int count;
-
 		do
 		{
-			do {
-				count = m_count;
-			} while (!count);
-			Target[1] = count;
-			Target[2] = count + 1;
-		}
-		while (InterlockedCompareExchange((volatile LONG*)m_count, count + 1, count) != count);
-		Target[0] = 0;
-		InterlockedExchange(Target, 0);
+			while (!this->m_count);
+		} while (!tlAtomicCompareAndSwap(&this->m_count, this->m_count + 1, this->m_count));
+		tlMemoryFence();
 	}
 	void ReadUnlock()
 	{
@@ -54,20 +45,18 @@ public:
 			count = m_count;
 			tlAssert(count > 1);
 		}
-		while (InterlockedCompareExchange((volatile LONG*)m_count, count - 1, count) != count);
+		while (!tlAtomicCompareAndSwap(&this->m_count, count - 1, count));
 	}
 	void WriteLock()
 	{
-		LONG Target; // [esp+4h] [ebp-4h] BYREF
-
-		while (InterlockedCompareExchange((volatile LONG*)m_count, 0, 1) != 1);
+		while (!tlAtomicCompareAndSwap(&this->m_count, 0, 1u));
 		tlMemoryFence();
 	}
 	void WriteUnlock()
 	{
 		tlMemoryFence();
 		tlAssert(m_count == 0);
-		if (InterlockedCompareExchange((volatile LONG*)m_count, 1, 0) != 0)
+		if (!tlAtomicCompareAndSwap(&this->m_count, 1u, 0))
 		{
 			tlAssert(false);
 		}

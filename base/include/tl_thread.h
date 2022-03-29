@@ -38,6 +38,8 @@ typedef struct CPPEH_RECORD
 
 const DWORD MS_VC_EXCEPTION = 0x406D1388;
 
+tlThreadId tlGetCurrentThreadId();
+
 FORCEINLINE void tlMemoryFence()
 {
     LONG Fence = 0;
@@ -65,206 +67,6 @@ static void SetThreadName(unsigned int dwThreadID, const char* szThreadName)
 #pragma warning(pop)
 }
 
-class tlAtomicReadWriteMutex
-{
-private:
-    volatile unsigned __int64 WriteThreadId;
-    volatile int ReadLockCount;
-    volatile int WriteLockCount;
-    tlAtomicReadWriteMutex* ThisPtr;
-
-public:
-    void WriteLock()
-    {
-        unsigned __int64 CurThread;
-
-        CurThread = GetCurrentThreadId();
-        if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, CurThread) == CurThread)
-        {
-            InterlockedExchangeAdd((volatile LONG*)&ThisPtr->WriteLockCount, 1);
-            return;
-        }
-
-        while (1)
-        {
-            if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
-            {
-                if (InterlockedCompareExchange((volatile LONG*)&ThisPtr->ReadLockCount, 0, 0) == 0)
-                {
-                    break;
-                }
-
-                while (InterlockedCompareExchange64((volatile __int64*)ThisPtr, 0, CurThread) != CurThread) {}
-            }
-
-            SwitchToThread();
-        }
-
-        InterlockedExchangeAdd((volatile LONG*)&ThisPtr->WriteLockCount, 1);
-        tlMemoryFence();
-    }
-
-    void ReadLock()
-    {
-        unsigned __int64 CurThread;
-
-        CurThread = GetCurrentThreadId();
-        if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, CurThread) == CurThread)
-        {
-            InterlockedExchangeAdd((volatile LONG*)&ThisPtr->ReadLockCount, 1);
-        }
-        else
-        {
-            while (1)
-            {
-                if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
-                {
-                    break;
-                }
-                SwitchToThread();
-            }
-
-            InterlockedExchangeAdd((volatile LONG*)&ThisPtr->ReadLockCount, 1);
-
-            while (InterlockedCompareExchange64((volatile __int64*)ThisPtr, 0, CurThread) != CurThread) {}
-        }
-        tlMemoryFence();
-    }
-
-    void WriteUnlock()
-    {
-        unsigned __int64 CurThread;
-
-        CurThread = GetCurrentThreadId();
-        if (!/*Sys_*/InterlockedDecrement((volatile LONG*)&ThisPtr->WriteLockCount))
-        {
-            tlMemoryFence();
-            while (InterlockedCompareExchange64((volatile signed __int64*)ThisPtr, 0, CurThread) != CurThread) {}
-        }
-    }
-
-};
-
-class tlAtomicMutex
-{
-public:
-    unsigned __int64 ThreadId;
-    int LockCount;
-    tlAtomicMutex* ThisPtr;
-
-    ~tlAtomicMutex()
-    {
-        this->ThreadId = 0;
-        this->ThisPtr = NULL;
-    }
-
-    void Lock()
-    {
-        unsigned __int64 CurThread;
-
-        CurThread = GetCurrentThreadId();
-        if (ThreadId == CurThread)
-        {
-            ++LockCount;
-        }
-        else
-        {
-            while (1)
-            {
-                if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
-                {
-                    break;
-                }
-                SwitchToThread();
-            }
-
-            tlMemoryFence();
-            LockCount = 1;
-        }
-    }
-
-    void Unlock()
-    {
-        if (LockCount-- == 1)
-        {
-            tlMemoryFence();
-            ThreadId = 0;
-        }
-    }
-
-    bool TryLock()
-    {
-        unsigned __int64 CurThread;
-
-        CurThread = GetCurrentThreadId();
-        if (ThreadId == CurThread)
-        {
-            ++LockCount;
-            return 1;
-        }
-        else
-        {
-            if (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0) == 0)
-            {
-                tlMemoryFence();
-                LockCount = 1;
-
-                return 1;
-            }
-        }
-        return 0;
-    }
-
-    void Create()
-    {
-        ThisPtr = this;
-        ThreadId = 0;
-        LockCount = 0;
-    }
-
-    void Destroy()
-    {
-        ThreadId = 0;
-        ThisPtr = 0;
-    }
-};
-
-class tlSharedAtomicMutex
-{
-public:
-    volatile unsigned __int64 ThreadId;
-    volatile int LockCount;
-    tlSharedAtomicMutex* ThisPtr;
-
-    void Lock()
-    {
-        unsigned __int64 CurThread;
-
-        CurThread = GetCurrentThreadId();
-        if (ThisPtr->ThreadId == CurThread)
-        {
-            ++ThisPtr->LockCount;
-        }
-        else
-        {
-            while (InterlockedCompareExchange64((volatile __int64*)ThisPtr, CurThread, 0))
-            {
-                SwitchToThread();
-            }
-            tlMemoryFence();
-            ThisPtr->LockCount = 1;
-        }
-    }
-    void Unlock()
-    {
-        if (ThisPtr->LockCount-- == 1)
-        {
-            tlMemoryFence();
-            ThisPtr->ThreadId = 0;
-        }
-    }
-};
-
 static int tlAtomicIncrement(volatile int* var)
 {
     return InterlockedExchangeAdd((volatile LONG*)var, 1);
@@ -275,9 +77,14 @@ static int tlAtomicDecrement(volatile int* var)
     return InterlockedExchangeAdd((volatile LONG*)var, -1);
 }
 
-static bool tlAtomicCompareAndSwap(volatile int* var, unsigned int exchange, unsigned int comperand)
+static bool tlAtomicCompareAndSwap(volatile unsigned int* var, unsigned int exchange, unsigned int comperand)
 {
     return InterlockedCompareExchange((volatile LONG*)var, exchange, comperand) == comperand;
+}
+
+static bool tlAtomicCompareAndSwap(volatile u64* var, u64 newvalue, u64 compare)
+{
+    return InterlockedCompareExchange64((volatile LONGLONG*)var, compare, newvalue) == compare;
 }
 
 static unsigned int tlAtomicAdd(volatile unsigned int* var, unsigned int value)
@@ -313,7 +120,7 @@ static unsigned __int64 tlAtomicOr(volatile unsigned __int64* var, unsigned __in
     return value | v;
 }
 
-static unsigned int tlGetCurrentThreadId()
+static tlThreadId tlGetCurrentThreadId()
 {
     return GetCurrentThreadId();
 }
@@ -322,3 +129,186 @@ static void tlYield()
 {
     SwitchToThread();
 }
+
+class tlAtomicReadWriteMutex
+{
+private:
+    volatile u64 WriteThreadId;
+    volatile int ReadLockCount;
+    volatile int WriteLockCount;
+    tlAtomicReadWriteMutex* ThisPtr;
+
+public:
+    void WriteLock()
+    {
+        u64 CurThread;
+
+        CurThread = tlGetCurrentThreadId();
+        if (tlAtomicCompareAndSwap(&this->ThisPtr->WriteThreadId, CurThread, CurThread))
+        {
+            tlAtomicIncrement(&this->ThisPtr->WriteLockCount);
+            return;
+        }
+        while (1)
+        {
+            if (!tlAtomicCompareAndSwap(&this->ThisPtr->WriteThreadId, CurThread, 0LL))
+            {
+                tlYield();
+                continue;
+            }
+            if (tlAtomicCompareAndSwap((volatile u32*)&this->ThisPtr->ReadLockCount, 0, 0))
+                break;
+            while (!tlAtomicCompareAndSwap(&this->ThisPtr->WriteThreadId, 0LL, CurThread));
+            tlYield();
+        }
+        tlAtomicIncrement(&this->ThisPtr->WriteLockCount);
+        tlMemoryFence();
+    }
+
+    void ReadLock()
+    {
+        u64 CurThread;
+
+        CurThread = tlGetCurrentThreadId();
+        if (tlAtomicCompareAndSwap(&this->ThisPtr->WriteThreadId, CurThread, CurThread))
+        {
+            tlAtomicIncrement(&this->ThisPtr->ReadLockCount);
+        }
+        else
+        {
+            while (!tlAtomicCompareAndSwap(&this->ThisPtr->WriteThreadId, CurThread, 0LL))
+                tlYield();
+            tlAtomicIncrement(&this->ThisPtr->ReadLockCount);
+            while (!tlAtomicCompareAndSwap(&this->ThisPtr->WriteThreadId, 0LL, CurThread));
+        }
+        tlMemoryFence();
+    }
+
+    void WriteUnlock()
+    {
+        u64 CurThread;
+
+        CurThread = tlGetCurrentThreadId();
+        if (!tlAtomicDecrement(&this->ThisPtr->WriteLockCount))
+        {
+            tlMemoryFence();
+            while (!tlAtomicCompareAndSwap(&this->ThisPtr->WriteThreadId, 0LL, CurThread));
+        }
+    }
+
+    void ReadUnlock()
+    {
+        tlAtomicDecrement(&this->ThisPtr->ReadLockCount);
+    }
+
+};
+
+class tlAtomicMutex
+{
+public:
+    u64 ThreadId;
+    int LockCount;
+    tlAtomicMutex* ThisPtr;
+
+    ~tlAtomicMutex()
+    {
+        this->ThreadId = 0;
+        this->ThisPtr = NULL;
+    }
+
+    void Lock()
+    {
+        u64 CurThread;
+
+        CurThread = tlGetCurrentThreadId();
+        if (this->ThreadId == CurThread)
+        {
+            ++this->LockCount;
+        }
+        else
+        {
+            while (!tlAtomicCompareAndSwap(&this->ThisPtr->ThreadId, CurThread, 0LL))
+                tlYield();
+            tlMemoryFence();
+            this->LockCount = 1;
+        }
+    }
+
+    void Unlock()
+    {
+        if (LockCount-- == 1)
+        {
+            tlMemoryFence();
+            ThreadId = 0;
+        }
+    }
+
+    bool TryLock()
+    {
+        u64 CurThread;
+
+        CurThread = tlGetCurrentThreadId();
+        if (this->ThreadId == CurThread)
+        {
+            ++this->LockCount;
+            return true;
+        }
+        else
+        {
+            if (tlAtomicCompareAndSwap(&this->ThisPtr->ThreadId, CurThread, 0LL))
+            {
+                tlMemoryFence();
+                this->LockCount = 1;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void Create()
+    {
+        ThisPtr = this;
+        ThreadId = 0;
+        LockCount = 0;
+    }
+
+    void Destroy()
+    {
+        ThreadId = 0;
+        ThisPtr = 0;
+    }
+};
+
+class tlSharedAtomicMutex
+{
+public:
+    volatile u64 ThreadId;
+    volatile int LockCount;
+    tlSharedAtomicMutex* ThisPtr;
+
+    void Lock()
+    {
+        u64 CurThread;
+
+        CurThread = tlGetCurrentThreadId();
+        if (this->ThreadId == CurThread)
+        {
+            ++this->LockCount;
+        }
+        else
+        {
+            while (!tlAtomicCompareAndSwap(&this->ThisPtr->ThreadId, CurThread, 0LL))
+                tlYield();
+            tlMemoryFence();
+            this->LockCount = 1;
+        }
+    }
+    void Unlock()
+    {
+        if (ThisPtr->LockCount-- == 1)
+        {
+            tlMemoryFence();
+            ThisPtr->ThreadId = 0;
+        }
+    }
+};
