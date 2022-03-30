@@ -280,7 +280,7 @@ void jqAttachQueueToWorkers(jqQueue* Queue, unsigned int ProcessorMask)
             {
                 numQueues = Worker->NumQueues;
                 tlAssert(numQueues < JQ_MAX_QUEUES);
-            } while (!tlAtomicCompareAndSwap((volatile u64*)&Worker->Queues[numQueues], (u64)Queue, 0));
+            } while (!tlAtomicCompareAndSwap((volatile u32*)&Worker->Queues[numQueues], (u32)Queue, 0));
             tlAtomicIncrement(&Worker->NumQueues);
             Queue->ProcessorsMask |= Worker->Processor;
         }
