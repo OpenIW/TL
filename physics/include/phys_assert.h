@@ -1,3 +1,5 @@
+#pragma once
+
 void phys_set_debug_callback(void(*debug_callback)(void*));
 void phys_exec_debug_callback(void* data);
 void PHYS_WARNING(const char* file, int line, const char* expr, const char* desc);
