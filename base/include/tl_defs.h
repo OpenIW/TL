@@ -10,6 +10,7 @@
 
 #define tlUNIMPLEMENTED(x) { static bool inited = false; if (!inited) { OutputDebugStringA("----- "); OutputDebugStringA(x); OutputDebugStringA(" not implemented.\n"); inited = true; }};
 #define tlAssert(cond) if (!(cond) && !_tlAssert(__FILE__, __LINE__, "%s", #cond)) { __debugbreak(); }
+#define tlAssertMsg(cond, msg) if (!(cond) && !_tlAssert(__FILE__, __LINE__, #cond, #msg)) { __debugbreak(); }
 
 typedef unsigned int u32;
 typedef unsigned __int64 u64;

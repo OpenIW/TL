@@ -92,13 +92,24 @@ void phys_slot_pool::extra_info_init(void* slot)
 	}
 }
 
-void phys_slot_pool::free_slot(void* slot)
+void phys_slot_pool::free_slot(void* _slot)
 {
-	tlUNIMPLEMENTED(__FUNCTION__);
-	return;
+	u64 next_slot;
+	u32 slot;
+	tagged_void_pointer_t first_slot;
 
-	tlAssert(slot);
-	extra_info_free(slot);
+	slot = (u32)_slot - (u32)g_phys_memory_manager->m_buffer_start;
+	tlAssert(_slot);
+	extra_info_free(_slot);
+	do
+	{
+		first_slot.set(&this->m_first_free_slot);
+		*(u32*)&g_phys_memory_manager->m_buffer_start[slot] = first_slot.m_ptr;
+		tlMemoryFence();
+		(*(tagged_void_pointer_t*)&next_slot).m_ptr = slot;
+		(*(tagged_void_pointer_t*)&next_slot).m_tag = first_slot.m_tag + 1;
+
+	} while (!tlAtomicCompareAndSwap((volatile u64*)&this->m_first_free_slot, next_slot, *(u64*)&first_slot));
 }
 
 void phys_slot_pool::init(unsigned int slot_size, unsigned int slot_alignment)
@@ -120,7 +131,7 @@ void phys_slot_pool::validate_slot(void* slot)
 	tlAssert(GetStuff32(&ei->m_allocation_owner) == allocation_owner);
 }
 
-int phys_memory_manager::allocate(unsigned int size, unsigned int alignment)
+void* phys_memory_manager::allocate(unsigned int size, unsigned int alignment)
 {
 	char* alignedPos;
 
@@ -133,7 +144,7 @@ int phys_memory_manager::allocate(unsigned int size, unsigned int alignment)
 		}
 		if (InterlockedCompareExchange((volatile LONG*)m_buffer_cur, (int)(alignedPos + size), *m_buffer_cur) == *m_buffer_cur)
 		{
-			return (int)alignedPos;
+			return alignedPos;
 		}
 	}
 }
@@ -208,6 +219,12 @@ char* PHYS_ALIGN(char* pos, int alignment)
 	return (char*)tl_align((int)pos, alignment);
 }
 
+phys_slot_pool* GET_PHYS_SLOT_POOL(unsigned int size, unsigned int alignment)
+{
+	tlAssertMsg(size >= sizeof(uintptr_t), "Allocations smaller than pointer size are not supported.");
+	return g_phys_memory_manager->get_slot_pool(size, alignment);
+}
+
 void phys_memory_manager_init(void* memory_buffer, const int memory_buffer_size)
 {
 	phys_memory_manager* memManager;
@@ -231,4 +248,37 @@ void phys_memory_manager_term()
 	g_phys_memory_buffer = 0;
 	g_phys_memory_buffer_size = 0;
 	g_phys_memory_manager = 0;
+}
+
+void* PMM_PERM_ALLOCATE(const size_t size, const u32 alignment)
+{
+	void* ptr = g_phys_memory_manager->allocate(size, alignment);
+	tlAssertMsg(ptr, "physics memory manager error: out of memory.");
+	return ptr;
+}
+
+void* PMM_ALLOC(const size_t size, const u32 alignment)
+{
+	phys_slot_pool* psp;
+
+	tlAssert(size);
+	psp = g_phys_memory_manager->get_slot_pool(size, alignment);
+	return psp->allocate_slot();
+}
+
+void PMM_FREE(void* ptr, const size_t size, const u32 alignment)
+{
+	phys_slot_pool* slot_pool = g_phys_memory_manager->get_slot_pool(size, alignment);
+	slot_pool->free_slot(ptr);
+}
+
+void* PSP_ALLOC(void* slot_pool)
+{
+	return reinterpret_cast<phys_slot_pool*>(slot_pool)->allocate_slot();
+}
+
+void PMM_VALIDATE(void* ptr, const size_t size, const u32 alignment)
+{
+	phys_slot_pool* slot_pool = g_phys_memory_manager->get_slot_pool(size, alignment);
+	slot_pool->validate_slot(ptr);
 }

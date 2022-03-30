@@ -5,12 +5,13 @@
 
 volatile struct tagged_void_pointer_t
 {
-	void* m_ptr;
-	int m_tag;
+	u32 m_ptr;
+	u32 m_tag;
 
-	void set(void* value)
+	void set(const volatile tagged_void_pointer_t* value)
 	{
-		m_ptr = value;
+		m_ptr = value->m_ptr;
+		m_tag = value->m_tag;
 	}
 };
 
@@ -57,12 +58,18 @@ public:
 	__declspec(align(8)) phys_slot_pool m_list_preallocated_slot_pools[28];
 	int m_list_preallocated_slot_pools_count;
 
-	int allocate(unsigned int size, unsigned int alignment);
+	void* allocate(unsigned int size, unsigned int alignment);
 	phys_slot_pool* allocate_slot_pool();
 	phys_slot_pool* get_slot_pool(unsigned int slot_size, unsigned int slot_alignment);
 	phys_memory_manager(void* memory_buffer, int memory_buffer_size);
 };
 
+void PSP_FREE(void* slot_pool, void* slot);
+void* PMM_PERM_ALLOCATE(const size_t size, const u32 alignment);
+void* PMM_ALLOC(const size_t size, const u32 alignment);
+void PMM_FREE(void* ptr, const size_t size, const u32 alignment);
+void* PSP_ALLOC(void* slot_pool);
+void PMM_VALIDATE(void* ptr, const size_t size, const u32 alignment);
 char* PHYS_ALIGN(char* pos, int alignment);
 phys_slot_pool* GET_PHYS_SLOT_POOL(unsigned int size, unsigned int alignment);
 void phys_memory_manager_init(void* memory_buffer, const int memory_buffer_size);
